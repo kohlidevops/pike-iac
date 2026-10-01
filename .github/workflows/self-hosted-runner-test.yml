@@ -1,0 +1,46 @@
+name: Self Hosted Runner Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runner-test:
+    runs-on: [self-hosted, linux, x64, pike]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Runner Information
+        shell: bash
+        run: |
+          echo "Runner hostname:"
+          hostname
+
+          echo "Operating System:"
+          cat /etc/os-release
+
+          echo "Kernel:"
+          uname -a
+
+          echo "Architecture:"
+          uname -m
+
+          echo "Current User:"
+          whoami
+
+          echo "Working Directory:"
+          pwd
+
+      - name: Test Git
+        shell: bash
+        run: |
+          git --version
+
+      - name: Test Azure CLI
+        shell: bash
+        run: |
+          az version
