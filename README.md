@@ -32,6 +32,7 @@ repo:kohlidevops@111111111/pike-iac@22222222:ref:refs/heads/main
 
 ## 2. Architecture
 
+```
 GitHub Repository
     ↓
 GitHub Actions
@@ -49,7 +50,7 @@ Azure Service Principal
 Azure Subscription
     ↓
 Azure Resources
-
+```
 
 ## 3. Login to Azure
 
