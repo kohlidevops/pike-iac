@@ -26,12 +26,22 @@ jobs:
       RESOURCE_GROUP: rg-test-dev
       PARAM_FILE: eaas-azure-modules/dev.bicepparam
 
+      VM_ADMIN_PASSWORD: ${{ secrets.VM_ADMIN_PASSWORD }}
+      SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+      RBAC_PRINCIPAL_ID: ${{ secrets.RBAC_PRINCIPAL_ID }}
+      RBAC_PRINCIPAL_TYPE: ${{ secrets.RBAC_PRINCIPAL_TYPE }}
+
     steps:
-      # 1. Checkout repository
+
+      # --------------------------------------------------
+      # 1. Checkout Repository
+      # --------------------------------------------------
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Authenticate with Azure using existing OIDC configuration
+      # --------------------------------------------------
+      # 2. Azure Login using OIDC
+      # --------------------------------------------------
       - name: Azure Login with OIDC
         uses: azure/login@v3
         with:
@@ -39,56 +49,120 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # 3. Verify Azure account and target resource group
+      # --------------------------------------------------
+      # 3. Verify Azure Target
+      # --------------------------------------------------
       - name: Verify Azure Target
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "===== Azure Account ====="
+          echo "========================================"
+          echo "Azure Account"
+          echo "========================================"
+
           az account show \
             --query "{Subscription:name,SubscriptionId:id,TenantId:tenantId}" \
             -o table
 
-          echo "===== Target Resource Group ====="
+          echo ""
+          echo "========================================"
+          echo "Target Resource Group"
+          echo "========================================"
+
           az group show \
             --name "$RESOURCE_GROUP" \
             --query "{Name:name,Location:location}" \
             -o table
 
-          echo "===== Bicep Parameter File ====="
+          echo ""
+          echo "========================================"
+          echo "Parameter File"
+          echo "========================================"
+
           test -f "$PARAM_FILE"
 
-      # 4. Build Bicep
+          echo "Parameter file found: $PARAM_FILE"
+
+      # --------------------------------------------------
+      # 4. Verify Required Environment Variables
+      # --------------------------------------------------
+      - name: Verify Deployment Parameters
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Checking required deployment parameters..."
+
+          test -n "$VM_ADMIN_PASSWORD" \
+            || { echo "VM_ADMIN_PASSWORD is missing"; exit 1; }
+
+          test -n "$SQL_ADMIN_PASSWORD" \
+            || { echo "SQL_ADMIN_PASSWORD is missing"; exit 1; }
+
+          test -n "$RBAC_PRINCIPAL_ID" \
+            || { echo "RBAC_PRINCIPAL_ID is missing"; exit 1; }
+
+          test -n "$RBAC_PRINCIPAL_TYPE" \
+            || { echo "RBAC_PRINCIPAL_TYPE is missing"; exit 1; }
+
+          echo "All required deployment parameters are available."
+
+      # --------------------------------------------------
+      # 5. Build Bicep
+      # --------------------------------------------------
       - name: Build Bicep Template
         shell: bash
         run: |
           set -euo pipefail
 
+          echo "========================================"
+          echo "Bicep Version"
+          echo "========================================"
+
           az bicep version
+
+          echo ""
+          echo "========================================"
+          echo "Building Bicep Template"
+          echo "========================================"
 
           az bicep build \
             --file eaas-azure-modules/main.bicep \
             --outfile "$RUNNER_TEMP/main.json"
 
+          echo ""
           echo "Bicep build completed successfully."
 
-      # 5. Run Bicep lint
+      # --------------------------------------------------
+      # 6. Lint Bicep
+      # --------------------------------------------------
       - name: Lint Bicep Template
         shell: bash
         run: |
           set -euo pipefail
 
+          echo "========================================"
+          echo "Bicep Lint"
+          echo "========================================"
+
           az bicep lint \
             --file eaas-azure-modules/main.bicep
 
+          echo ""
           echo "Bicep lint completed."
 
-      # 6. Validate deployment against Azure
+      # --------------------------------------------------
+      # 7. Validate Azure Deployment
+      # --------------------------------------------------
       - name: Validate Azure Deployment
         shell: bash
         run: |
           set -euo pipefail
+
+          echo "========================================"
+          echo "Azure Deployment Validation"
+          echo "========================================"
 
           az deployment group validate \
             --name "eaas-dev-validate-${GITHUB_RUN_NUMBER}" \
@@ -96,27 +170,41 @@ jobs:
             --parameters "$PARAM_FILE" \
             --output table
 
+          echo ""
           echo "Azure deployment validation succeeded."
 
-      # 7. Preview changes before deployment
+      # --------------------------------------------------
+      # 8. What-If
+      # --------------------------------------------------
       - name: Preview Changes - What If
         shell: bash
         run: |
           set -euo pipefail
+
+          echo "========================================"
+          echo "Azure Deployment What-If"
+          echo "========================================"
 
           az deployment group what-if \
             --name "eaas-dev-whatif-${GITHUB_RUN_NUMBER}" \
             --resource-group "$RESOURCE_GROUP" \
             --parameters "$PARAM_FILE"
 
-      # 8. Deploy only when explicitly enabled
+          echo ""
+          echo "What-If completed."
+
+      # --------------------------------------------------
+      # 9. Deploy
+      # --------------------------------------------------
       - name: Deploy Resources to Azure
         if: ${{ inputs.deploy }}
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Starting Azure deployment..."
+          echo "========================================"
+          echo "Starting Azure Deployment"
+          echo "========================================"
 
           az deployment group create \
             --name "eaas-dev-${GITHUB_RUN_NUMBER}" \
@@ -125,13 +213,22 @@ jobs:
             --query properties.provisioningState \
             --output tsv
 
-          echo "Azure deployment command completed."
+          echo ""
+          echo "Azure deployment completed successfully."
 
-      # 9. Report when deployment was not requested
+      # --------------------------------------------------
+      # 10. Deployment Skipped
+      # --------------------------------------------------
       - name: Deployment Skipped
         if: ${{ !inputs.deploy }}
         shell: bash
         run: |
+          echo "========================================"
+          echo "Deployment Skipped"
+          echo "========================================"
+
           echo "Build, lint, validation and What-If completed."
-          echo "Deployment was not requested."
-          echo "Review the What-If output before running with deploy=true."
+          echo "The deploy option was not selected."
+          echo ""
+          echo "Review the What-If output before running"
+          echo "the workflow again with deploy=true."
