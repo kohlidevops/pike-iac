@@ -20,7 +20,7 @@ concurrency:
 jobs:
   deploy:
     name: Build, Validate and Deploy
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, pike, azure]
 
     env:
       RESOURCE_GROUP: rg-test-dev
