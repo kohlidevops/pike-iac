@@ -2,7 +2,9 @@ param location string
 @minLength(3)
 @maxLength(24)
 param keyVaultName string
-param tags object = {}
+@allowed(['standard', 'premium'])
+param skuName string
+param tags object
 
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
@@ -12,7 +14,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     tenantId: tenant().tenantId
     sku: {
       family: 'A'
-      name: 'standard'
+      name: skuName
     }
     enableRbacAuthorization: true
     enableSoftDelete: true
@@ -21,11 +23,10 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     publicNetworkAccess: 'Enabled'
     networkAcls: {
       bypass: 'AzureServices'
-      defaultAction: 'Allow'
+      defaultAction: 'Deny'
     }
   }
 }
-
 output keyVaultId string = keyVault.id
 output keyVaultName string = keyVault.name
 output keyVaultUri string = keyVault.properties.vaultUri

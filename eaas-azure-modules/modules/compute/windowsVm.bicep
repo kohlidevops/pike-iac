@@ -1,19 +1,17 @@
 param location string
 param vmName string
 param subnetId string
-param nsgId string
 param adminUsername string
 @secure()
 param adminPassword string
-param vmSize string = 'Standard_B2s'
-param tags object = {}
+param vmSize string
+param tags object
 
 resource nic 'Microsoft.Network/networkInterfaces@2023-09-01' = {
   name: '${vmName}-nic'
   location: location
   tags: tags
   properties: {
-    networkSecurityGroup: { id: nsgId }
     ipConfigurations: [
       {
         name: 'ipconfig1'
@@ -25,7 +23,6 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-09-01' = {
     ]
   }
 }
-
 resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
   name: vmName
   location: location
@@ -45,7 +42,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
       imageReference: {
         publisher: 'MicrosoftWindowsServer'
         offer: 'WindowsServer'
-        sku: '2025-datacenter-azure-edition'
+        sku: '2022-datacenter-azure-edition'
         version: 'latest'
       }
       osDisk: {
@@ -54,19 +51,11 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
       }
     }
     networkProfile: {
-      networkInterfaces: [
-        {
-          id: nic.id
-          properties: { primary: true }
-        }
-      ]
+      networkInterfaces: [{ id: nic.id, properties: { primary: true } }]
     }
-    diagnosticsProfile: {
-      bootDiagnostics: { enabled: true }
-    }
+    diagnosticsProfile: { bootDiagnostics: { enabled: true } }
   }
 }
-
 output vmId string = vm.id
 output vmName string = vm.name
 output nicId string = nic.id

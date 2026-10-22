@@ -1,11 +1,10 @@
-
-name: Deploy EaaS Dev - Bicep
+name: Deploy EaaS Dev - Reusable Bicep Library
 
 on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: "Deploy resources after reviewing the What-If output"
+        description: 'Create/update the Dev resource group and deploy resources after reviewing What-If'
         required: true
         type: boolean
         default: false
@@ -20,23 +19,21 @@ concurrency:
 
 jobs:
   deploy:
-    name: Build, Validate, Security Scan and Deploy
+    name: Build, Validate, Scan, What-If and Deploy
     runs-on: [self-hosted, Linux, X64, pike]
-
     env:
-      RESOURCE_GROUP: rg-test-dev
+      LOCATION: centralus
       PARAM_FILE: eaas-azure-modules/dev.bicepparam
+      TEMPLATE_FILE: eaas-azure-modules/main.bicep
       VM_ADMIN_PASSWORD: ${{ secrets.VM_ADMIN_PASSWORD }}
       SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
       RBAC_PRINCIPAL_ID: ${{ secrets.RBAC_PRINCIPAL_ID }}
       RBAC_PRINCIPAL_TYPE: ${{ secrets.RBAC_PRINCIPAL_TYPE }}
 
     steps:
-      # 1. Checkout Repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Azure Login using OIDC
       - name: Azure Login with OIDC
         uses: azure/login@v3
         with:
@@ -44,162 +41,91 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # 3. Verify Azure Target
-      - name: Verify Azure Target
+      - name: Verify Azure Context and Required Inputs
         shell: bash
         run: |
           set -euo pipefail
-
-          az account show \
-            --query "{Subscription:name,SubscriptionId:id,TenantId:tenantId}" \
-            --output table
-
-          az group show \
-            --name "$RESOURCE_GROUP" \
-            --query "{Name:name,Location:location}" \
-            --output table
-
+          az account show --query '{Subscription:name,SubscriptionId:id,TenantId:tenantId}' -o table
           test -f "$PARAM_FILE"
-          echo "Parameter file found: $PARAM_FILE"
+          test -f "$TEMPLATE_FILE"
+          test -n "$VM_ADMIN_PASSWORD" || { echo 'VM_ADMIN_PASSWORD is missing'; exit 1; }
+          test -n "$SQL_ADMIN_PASSWORD" || { echo 'SQL_ADMIN_PASSWORD is missing'; exit 1; }
+          test -n "$RBAC_PRINCIPAL_ID" || { echo 'RBAC_PRINCIPAL_ID is missing'; exit 1; }
+          test -n "$RBAC_PRINCIPAL_TYPE" || { echo 'RBAC_PRINCIPAL_TYPE is missing'; exit 1; }
+          echo 'Template, parameter file, Azure context, and required inputs are present.'
 
-      # 4. Verify Required Environment Variables
-      - name: Verify Deployment Parameters
+      - name: Build All Bicep Modules
         shell: bash
         run: |
           set -euo pipefail
+          find eaas-azure-modules -type f -name '*.bicep' -print0 | while IFS= read -r -d '' file; do
+            echo "Building $file"
+            az bicep build --file "$file" --outfile "$RUNNER_TEMP/$(basename "$(dirname "$file")")-$(basename "$file" .bicep).json"
+          done
 
-          test -n "$VM_ADMIN_PASSWORD" \
-            || { echo "VM_ADMIN_PASSWORD is missing"; exit 1; }
-
-          test -n "$SQL_ADMIN_PASSWORD" \
-            || { echo "SQL_ADMIN_PASSWORD is missing"; exit 1; }
-
-          test -n "$RBAC_PRINCIPAL_ID" \
-            || { echo "RBAC_PRINCIPAL_ID is missing"; exit 1; }
-
-          test -n "$RBAC_PRINCIPAL_TYPE" \
-            || { echo "RBAC_PRINCIPAL_TYPE is missing"; exit 1; }
-
-          echo "All required deployment parameters are available."
-
-      # 5. Build Bicep
-      - name: Build Bicep Template
+      - name: Lint Root Bicep Template
         shell: bash
         run: |
           set -euo pipefail
+          az bicep lint --file "$TEMPLATE_FILE"
 
-          az bicep version
-
-          az bicep build \
-            --file eaas-azure-modules/main.bicep \
-            --outfile "$RUNNER_TEMP/main.json"
-
-          echo "Bicep build completed successfully."
-
-      # 6. Lint Bicep
-      - name: Lint Bicep Template
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          az bicep lint \
-            --file eaas-azure-modules/main.bicep
-
-          echo "Bicep lint completed."
-
-      # 7. Install and Run Checkov
       - name: Security Scan - Checkov
         shell: bash
         run: |
           set -euo pipefail
-
           python3 -m venv "$RUNNER_TEMP/checkov-venv"
+          "$RUNNER_TEMP/checkov-venv/bin/pip" install --disable-pip-version-check checkov
+          "$RUNNER_TEMP/checkov-venv/bin/checkov" --directory eaas-azure-modules --framework bicep --quiet
 
-          "$RUNNER_TEMP/checkov-venv/bin/pip" install \
-            --disable-pip-version-check \
-            checkov
-
-          "$RUNNER_TEMP/checkov-venv/bin/checkov" \
-            --file eaas-azure-modules/main.bicep \
-            --framework bicep \
-            --quiet
-
-          echo "Checkov security scan completed successfully."
-
-      # 8. Run Gitleaks Secret Scan
-      - name: Security Scan - Gitleaks
+      - name: Secret Scan - Gitleaks
         shell: bash
         run: |
           set -euo pipefail
-
-          GITLEAKS_VERSION="8.24.3"
-
+          GITLEAKS_VERSION='8.24.3'
           curl --fail --silent --show-error --location \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             --output "$RUNNER_TEMP/gitleaks.tar.gz"
-
           mkdir -p "$RUNNER_TEMP/gitleaks"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/gitleaks" gitleaks
+          "$RUNNER_TEMP/gitleaks/gitleaks" detect --source . --redact --exit-code 1 --no-banner
 
-          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" \
-            -C "$RUNNER_TEMP/gitleaks" \
-            gitleaks
-
-          "$RUNNER_TEMP/gitleaks/gitleaks" detect \
-            --source . \
-            --redact \
-            --exit-code 1 \
-            --no-banner
-
-          echo "Gitleaks secret scan completed successfully."
-
-      # 9. Validate Azure Deployment
-      - name: Validate Azure Deployment
+      - name: Validate Subscription Deployment
         shell: bash
         run: |
           set -euo pipefail
-
-          az deployment group validate \
+          az deployment sub validate \
             --name "eaas-dev-validate-${GITHUB_RUN_NUMBER}" \
-            --resource-group "$RESOURCE_GROUP" \
+            --location "$LOCATION" \
+            --template-file "$TEMPLATE_FILE" \
             --parameters "$PARAM_FILE" \
             --output table
 
-          echo "Azure deployment validation succeeded."
-
-      # 10. What-If
       - name: Preview Changes - What If
         shell: bash
         run: |
           set -euo pipefail
-
-          az deployment group what-if \
+          az deployment sub what-if \
             --name "eaas-dev-whatif-${GITHUB_RUN_NUMBER}" \
-            --resource-group "$RESOURCE_GROUP" \
-            --parameters "$PARAM_FILE"
+            --location "$LOCATION" \
+            --template-file "$TEMPLATE_FILE" \
+            --parameters "$PARAM_FILE" \
+            --result-format FullResourcePayloads
 
-          echo "What-If completed."
-
-      # 11. Deploy
-      - name: Deploy Resources to Azure
+      - name: Deploy Resource Group and Resources
         if: ${{ inputs.deploy }}
         shell: bash
         run: |
           set -euo pipefail
-
-          az deployment group create \
+          az deployment sub create \
             --name "eaas-dev-${GITHUB_RUN_NUMBER}" \
-            --resource-group "$RESOURCE_GROUP" \
+            --location "$LOCATION" \
+            --template-file "$TEMPLATE_FILE" \
             --parameters "$PARAM_FILE" \
             --query properties.provisioningState \
             --output tsv
 
-          echo "Azure deployment completed successfully."
-
-      # 12. Deployment Skipped
       - name: Deployment Skipped
         if: ${{ !inputs.deploy }}
         shell: bash
         run: |
-          echo "Deployment skipped."
-          echo "Build, lint, security scans, validation and What-If completed."
-          echo "Review all results before rerunning with deploy=true."
+          echo 'Deployment skipped. Review validation and What-If output, then rerun with deploy=true.'

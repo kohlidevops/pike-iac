@@ -1,319 +1,101 @@
-targetScope = 'resourceGroup'
+targetScope = 'subscription'
 
-param location string = 'centralus'
-param prefix string = 'testdev'
+@description('Target resource group name for this environment.')
+param resourceGroupName string
+@description('Azure region for the resource group and resources.')
+param location string
+@description('Environment identifier used in names and tags.')
+@minLength(2)
+@maxLength(12)
+param environment string
+@description('Short workload prefix. Use lowercase letters and digits where resource naming rules require it.')
+@minLength(2)
+@maxLength(10)
+param prefix string
+param tags object
 
-param tags object = {
-  Environment: 'Dev'
-  ManagedBy: 'Bicep'
-  Workload: 'EaaS'
-}
-
-@description('Entra object ID of the user, group, or service principal receiving the role.')
-param rbacPrincipalId string
-
-@description('Built-in/custom role definition GUID. Reader is the default least-privilege example.')
-param rbacRoleDefinitionGuid string = 'acdd72a7-3385-48ef-bd42-f606fba81ae7'
-
-@description('Entra principal type for the RBAC assignment.')
-@allowed([
-  'User'
-  'Group'
-  'ServicePrincipal'
-  'ForeignGroup'
-  'Device'
-  'ManagedIdentity'
-])
-param rbacPrincipalType string = 'ServicePrincipal'
-
+@description('Azure VM administrator username.')
+param vmAdminUsername string
 @secure()
+@description('VM administrator password supplied through a GitHub Actions secret/environment variable.')
 param vmAdminPassword string
-
-param sqlAdminLogin string = 'sqladminuser'
-
+@description('Azure VM size for this environment.')
+param vmSize string
+@description('Virtual network address space in CIDR notation.')
+param vnetAddressPrefix string
+@description('VM subnet address range in CIDR notation.')
+param vmSubnetAddressPrefix string
+@description('NSG rules to apply to the VM subnet. Avoid broad inbound rules from Internet.')
+param nsgRules array
+@description('Storage account SKU, e.g. Standard_LRS.')
+param storageSkuName string
+@description('Key Vault SKU.')
+@allowed(['standard', 'premium'])
+param keyVaultSkuName string
+@description('SQL administrator login name.')
+param sqlAdminLogin string
 @secure()
+@description('SQL administrator password supplied through a GitHub Actions secret/environment variable.')
 param sqlAdminPassword string
+@description('Azure SQL database SKU name, e.g. Basic or GP_S_Gen5_1.')
+param sqlDatabaseSkuName string
+@description('Maximum Azure SQL database size in bytes.')
+param sqlDatabaseMaxSizeBytes int
+@description('Whether the SQL server public endpoint is enabled. Use Disabled with private networking for production.')
+@allowed(['Enabled', 'Disabled'])
+param sqlPublicNetworkAccess string
+@description('Entra object ID receiving the configured RBAC role at the resource-group scope.')
+param rbacPrincipalId string
+@description('Entra principal type for the RBAC assignment.')
+@allowed(['User', 'Group', 'ServicePrincipal', 'ForeignGroup', 'Device', 'ManagedIdentity'])
+param rbacPrincipalType string
+@description('Built-in/custom role definition GUID.')
+param rbacRoleDefinitionGuid string
 
-@allowed([
-  'dotnet-isolated'
-  'node'
-  'python'
-  'java'
-  'powershell'
-])
-param functionRuntime string = 'dotnet-isolated'
+var commonTags = union(tags, {
+  Environment: environment
+  ManagedBy: 'Bicep'
+})
 
-param functionRuntimeVersion string = '8.0'
+resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
+  name: resourceGroupName
+  location: location
+  tags: commonTags
+}
 
-param sqlDatabaseSkuName string = 'Basic'
-
-@description('Container image used by the Azure Container App.')
-param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
-
-var vnetName = '${prefix}-vnet'
-
-var nsgName = '${prefix}-nsg'
-
-var storageAccountName = take(
-  toLower(
-    replace(
-      '${prefix}${uniqueString(resourceGroup().id)}sa',
-      '-',
-      ''
-    )
-  ),
-  24
-)
-
-var keyVaultName = take(
-  toLower(
-    replace(
-      '${prefix}-kv-${uniqueString(resourceGroup().id)}',
-      '-',
-      ''
-    )
-  ),
-  24
-)
-
-var vmName = '${prefix}-winvm'
-
-var sqlServerName = take(
-  toLower(
-    replace(
-      '${prefix}-sql-${uniqueString(resourceGroup().id)}',
-      '-',
-      ''
-    )
-  ),
-  63
-)
-
-var sqlDatabaseName = '${prefix}-db'
-
-var functionStorageName = take(
-  toLower(
-    replace(
-      '${prefix}${uniqueString(resourceGroup().id)}funcsa',
-      '-',
-      ''
-    )
-  ),
-  24
-)
-
-var functionAppName = take(
-  toLower(
-    replace(
-      '${prefix}-func-${uniqueString(resourceGroup().id)}',
-      '-',
-      ''
-    )
-  ),
-  60
-)
-
-var appServicePlanName = '${prefix}-func-plan'
-
-var acrName = take(
-  toLower(
-    replace(
-      '${prefix}${uniqueString(resourceGroup().id)}acr',
-      '-',
-      ''
-    )
-  ),
-  50
-)
-
-var containerAppName = '${prefix}-containerapp'
-
-var containerAppsEnvironmentName = '${prefix}-containerapps-env'
-
-var containerAppsWorkspaceName = '${prefix}-containerapps-law'
-
-
-// ---------------------------------------------------------
-// Networking
-// ---------------------------------------------------------
-
-module networkModule 'modules/networking/network.bicep' = {
-  name: 'network-${uniqueString(resourceGroup().id)}'
+module workload './modules/resource-group/workload.bicep' = {
+  name: 'workload-${uniqueString(subscription().id, resourceGroupName, environment)}'
+  scope: rg
   params: {
     location: location
-    vnetName: vnetName
-    nsgName: nsgName
-    tags: tags
+    environment: environment
+    prefix: prefix
+    tags: commonTags
+    vmAdminUsername: vmAdminUsername
+    vmAdminPassword: vmAdminPassword
+    vmSize: vmSize
+    vnetAddressPrefix: vnetAddressPrefix
+    vmSubnetAddressPrefix: vmSubnetAddressPrefix
+    nsgRules: nsgRules
+    storageSkuName: storageSkuName
+    keyVaultSkuName: keyVaultSkuName
+    sqlAdminLogin: sqlAdminLogin
+    sqlAdminPassword: sqlAdminPassword
+    sqlDatabaseSkuName: sqlDatabaseSkuName
+    sqlDatabaseMaxSizeBytes: sqlDatabaseMaxSizeBytes
+    sqlPublicNetworkAccess: sqlPublicNetworkAccess
+    rbacPrincipalId: rbacPrincipalId
+    rbacPrincipalType: rbacPrincipalType
+    rbacRoleDefinitionGuid: rbacRoleDefinitionGuid
   }
 }
 
-
-// ---------------------------------------------------------
-// Storage
-// ---------------------------------------------------------
-
-module storageModule 'modules/storage/storageAccount.bicep' = {
-  name: 'storage-${uniqueString(resourceGroup().id)}'
-  params: {
-    location: location
-    storageAccountName: storageAccountName
-    tags: tags
-  }
-}
-
-
-// ---------------------------------------------------------
-// Key Vault
-// ---------------------------------------------------------
-
-module keyVaultModule 'modules/security/keyVault.bicep' = {
-  name: 'keyvault-${uniqueString(resourceGroup().id)}'
-  params: {
-    location: location
-    keyVaultName: keyVaultName
-    tags: tags
-  }
-}
-
-
-// ---------------------------------------------------------
-// Windows VM
-// ---------------------------------------------------------
-
-module vmModule 'modules/compute/windowsVm.bicep' = {
-  name: 'vm-${uniqueString(resourceGroup().id)}'
-  params: {
-    location: location
-    vmName: vmName
-    subnetId: networkModule.outputs.vmSubnetId
-    nsgId: networkModule.outputs.nsgId
-    adminUsername: 'azureadmin'
-    adminPassword: vmAdminPassword
-    vmSize: 'Standard_B2s'
-    tags: tags
-  }
-}
-
-
-// ---------------------------------------------------------
-// Azure SQL
-// ---------------------------------------------------------
-
-module sqlModule 'modules/database/sqlServer.bicep' = {
-  name: 'sql-${uniqueString(resourceGroup().id)}'
-  params: {
-    location: location
-    sqlServerName: sqlServerName
-    databaseName: sqlDatabaseName
-    administratorLogin: sqlAdminLogin
-    administratorLoginPassword: sqlAdminPassword
-    databaseSkuName: sqlDatabaseSkuName
-    publicNetworkAccess: 'Enabled'
-    tags: tags
-  }
-}
-
-
-// ---------------------------------------------------------
-// Azure Function App
-// ---------------------------------------------------------
-
-module functionAppModule 'modules/apps/functionApp.bicep' = {
-  name: 'function-${uniqueString(resourceGroup().id)}'
-  params: {
-    location: location
-    functionAppName: functionAppName
-    appServicePlanName: appServicePlanName
-    storageAccountName: functionStorageName
-    functionRuntime: functionRuntime
-    functionRuntimeVersion: functionRuntimeVersion
-    tags: tags
-  }
-}
-
-
-// ---------------------------------------------------------
-// Azure RBAC
-// ---------------------------------------------------------
-
-module rbacModule 'modules/security/rbac.bicep' = {
-  name: 'rbac-${uniqueString(resourceGroup().id)}'
-  params: {
-    principalId: rbacPrincipalId
-    roleDefinitionGuid: rbacRoleDefinitionGuid
-    roleAssignmentName: guid(
-      resourceGroup().id,
-      rbacPrincipalId,
-      rbacRoleDefinitionGuid
-    )
-    principalType: rbacPrincipalType
-  }
-}
-
-
-// ---------------------------------------------------------
-// Azure Container Registry
-// ---------------------------------------------------------
-
-module containerRegistryModule 'modules/containers/containerRegistry.bicep' = {
-  name: 'acr-${uniqueString(resourceGroup().id)}'
-  params: {
-    location: location
-    registryName: acrName
-    tags: tags
-  }
-}
-
-
-// ---------------------------------------------------------
-// Azure Container Apps
-// ---------------------------------------------------------
-
-module containerAppModule 'modules/containers/containerApp.bicep' = {
-  name: 'containerapp-${uniqueString(resourceGroup().id)}'
-  params: {
-    location: location
-    containerAppName: containerAppName
-    managedEnvironmentName: containerAppsEnvironmentName
-    logAnalyticsWorkspaceName: containerAppsWorkspaceName
-    containerImage: containerImage
-    tags: tags
-  }
-}
-
-
-// ---------------------------------------------------------
-// Outputs
-// ---------------------------------------------------------
-
-output deployedResourceGroup string = resourceGroup().name
-
-output deployedLocation string = location
-
-output vnetName string = networkModule.outputs.vnetName
-
-output vmName string = vmModule.outputs.vmName
-
-output storageAccountName string = storageModule.outputs.storageAccountName
-
-output keyVaultName string = keyVaultModule.outputs.keyVaultName
-
-output sqlServerName string = sqlModule.outputs.sqlServerName
-
-output sqlDatabaseName string = sqlModule.outputs.databaseName
-
-output functionAppName string = functionAppModule.outputs.functionAppName
-
-output functionStorageAccountName string = functionAppModule.outputs.storageAccountName
-
-output containerRegistryName string = containerRegistryModule.outputs.registryName
-
-output containerRegistryLoginServer string = containerRegistryModule.outputs.loginServer
-
-output containerAppName string = containerAppModule.outputs.containerAppName
-
-output containerAppUrl string = containerAppModule.outputs.containerAppUrl
-
-output containerAppsEnvironmentName string = containerAppModule.outputs.managedEnvironmentName
-
-output containerAppsLogAnalyticsWorkspaceName string = containerAppModule.outputs.logAnalyticsWorkspaceName
+output resourceGroupName string = rg.name
+output resourceGroupId string = rg.id
+output resourceGroupLocation string = rg.location
+output vnetName string = workload.outputs.vnetName
+output vmName string = workload.outputs.vmName
+output storageAccountName string = workload.outputs.storageAccountName
+output keyVaultName string = workload.outputs.keyVaultName
+output sqlServerName string = workload.outputs.sqlServerName
+output sqlDatabaseName string = workload.outputs.sqlDatabaseName

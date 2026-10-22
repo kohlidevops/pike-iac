@@ -2,13 +2,14 @@ param location string
 @minLength(3)
 @maxLength(24)
 param storageAccountName string
-param tags object = {}
+param skuName string
+param tags object
 
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageAccountName
   location: location
   tags: tags
-  sku: { name: 'Standard_LRS' }
+  sku: { name: skuName }
   kind: 'StorageV2'
   properties: {
     accessTier: 'Hot'
@@ -18,7 +19,6 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     publicNetworkAccess: 'Enabled'
   }
 }
-
 output storageAccountId string = storage.id
 output storageAccountName string = storage.name
 output blobEndpoint string = storage.properties.primaryEndpoints.blob
