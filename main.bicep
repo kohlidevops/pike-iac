@@ -7,7 +7,7 @@
 param workloadName string = 'sampleapp'
 
 @allowed(['dev', 'stg', 'prod'])
-@description('Deployment environment. Limited to values supported by every selected module.')
+@description('Deployment environment.')
 param environment string = 'dev'
 
 @description('Azure region short code used in resource names.')
@@ -38,7 +38,9 @@ param owner string
 param applicationName string
 
 @description('VNet address prefixes.')
-param addressPrefixes array = ['10.40.0.0/16']
+param addressPrefixes array = [
+  '10.40.0.0/16'
+]
 
 @description('VM subnet address prefix.')
 param vmSubnetPrefix string = '10.40.1.0/24'
@@ -68,6 +70,7 @@ param secretsOfficerGroupIds array = []
 @description('Key Vault Secrets User Entra ID group object IDs.')
 param secretsReaderGroupIds array = []
 
+// 1. Networking
 module network './network/main.bicep' = {
   name: 'network-${workloadName}-${environment}'
   params: {
@@ -77,8 +80,14 @@ module network './network/main.bicep' = {
     instance: instance
     addressPrefixes: addressPrefixes
     subnets: [
-      { name: 'vm', addressPrefix: vmSubnetPrefix }
-      { name: 'private-endpoints', addressPrefix: privateEndpointSubnetPrefix }
+      {
+        name: 'vm'
+        addressPrefix: vmSubnetPrefix
+      }
+      {
+        name: 'private-endpoints'
+        addressPrefix: privateEndpointSubnetPrefix
+      }
     ]
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     costCenter: costCenter
@@ -87,6 +96,7 @@ module network './network/main.bicep' = {
   }
 }
 
+// 2. Storage Account
 module storage './storage-account/main.bicep' = {
   name: 'storage-${workloadName}-${environment}'
   params: {
@@ -101,6 +111,7 @@ module storage './storage-account/main.bicep' = {
   }
 }
 
+// 3. Key Vault
 module keyVault './key-vault/main.bicep' = {
   name: 'key-vault-${workloadName}-${environment}'
   params: {
@@ -117,6 +128,7 @@ module keyVault './key-vault/main.bicep' = {
   }
 }
 
+// 4. SQL Database
 module sql './sql-database/main.bicep' = {
   name: 'sql-${workloadName}-${environment}'
   params: {
@@ -137,6 +149,7 @@ module sql './sql-database/main.bicep' = {
   }
 }
 
+// 5. Windows VM
 module vm './vm/main.bicep' = {
   name: 'vm-${workloadName}-${environment}'
   params: {
@@ -154,14 +167,19 @@ module vm './vm/main.bicep' = {
   }
 }
 
+// Deployment outputs
 output vnetId string = network.outputs.vnetId
+
 output vmId string = vm.outputs.vmId
 output vmName string = vm.outputs.vmName
 output vmPrivateIpAddress string = vm.outputs.privateIpAddress
+
 output storageAccountId string = storage.outputs.storageAccountId
 output storageAccountName string = storage.outputs.storageAccountName
+
 output keyVaultId string = keyVault.outputs.vaultId
 output keyVaultName string = keyVault.outputs.vaultName
+
 output sqlServerId string = sql.outputs.serverId
 output sqlServerFqdn string = sql.outputs.serverFqdn
 output sqlDatabaseName string = sql.outputs.databaseName

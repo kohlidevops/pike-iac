@@ -1,10 +1,11 @@
+
 name: bicep-deploy-windows
 
 on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: 'Deploy after What-If succeeds (otherwise validation/What-If only)'
+        description: 'Deploy after What-If succeeds'
         required: true
         type: boolean
         default: false
@@ -19,52 +20,70 @@ concurrency:
 
 jobs:
   validate-and-deploy:
-    runs-on: windows-latest
+    runs-on: [self-hosted, X64, Windows]
     timeout-minutes: 45
+
     env:
-      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_LOCATION: centralus
       VM_ADMIN_PASSWORD: ${{ secrets.VM_ADMIN_PASSWORD }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify Azure CLI is available on the Windows runner
+      - name: Verify Azure CLI
         shell: pwsh
         run: az version
 
-      - name: Compile Bicep templates
+      - name: Compile root Bicep template
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $files = Get-ChildItem -Path . -Recurse -Filter '*.bicep' |
-            Where-Object { $_.FullName -notmatch '[\/]\.git[\/]' }
-          if (-not $files) { throw 'No .bicep files found.' }
-          foreach ($file in $files) {
-            Write-Host "Compiling $($file.FullName)"
-            az bicep build --file $file.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Bicep build failed: $($file.FullName)" }
+          az bicep build --file main.bicep
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Root Bicep build failed.'
           }
 
       - name: Azure login using OIDC
         uses: azure/login@v2
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Validate deployment inputs
+      - name: Validate inputs and create resource group
         shell: pwsh
         env:
           RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP_DEV }}
         run: |
           $ErrorActionPreference = 'Stop'
-          if ([string]::IsNullOrWhiteSpace($env:AZURE_SUBSCRIPTION_ID)) { throw 'Set repository variable AZURE_SUBSCRIPTION_ID_DEV.' }
-          if ([string]::IsNullOrWhiteSpace($env:RESOURCE_GROUP)) { throw 'Set repository variable AZURE_RESOURCE_GROUP_DEV.' }
-          if ([string]::IsNullOrWhiteSpace($env:VM_ADMIN_PASSWORD)) { throw 'Set repository secret VM_ADMIN_PASSWORD.' }
+
+          if ([string]::IsNullOrWhiteSpace($env:AZURE_SUBSCRIPTION_ID)) {
+            throw 'Missing repository secret AZURE_SUBSCRIPTION_ID.'
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:RESOURCE_GROUP)) {
+            throw 'Create repository variable AZURE_RESOURCE_GROUP_DEV.'
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:VM_ADMIN_PASSWORD)) {
+            throw 'Missing repository secret VM_ADMIN_PASSWORD.'
+          }
+
           az account set --subscription $env:AZURE_SUBSCRIPTION_ID
-          if ($LASTEXITCODE -ne 0) { throw 'Unable to select the Azure subscription.' }
-          az group show --name $env:RESOURCE_GROUP --output none
-          if ($LASTEXITCODE -ne 0) { throw 'The target resource group must already exist.' }
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to select Azure subscription.'
+          }
+
+          az group create `
+            --name $env:RESOURCE_GROUP `
+            --location $env:AZURE_LOCATION `
+            --output none
+
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to create or verify resource group.'
+          }
 
       - name: What-If deployment
         shell: pwsh
@@ -72,12 +91,16 @@ jobs:
           RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP_DEV }}
         run: |
           $ErrorActionPreference = 'Stop'
+
           az deployment group what-if `
             --name "pike-main-$env:GITHUB_RUN_NUMBER" `
             --resource-group $env:RESOURCE_GROUP `
             --template-file main.bicep `
             --parameters main.bicepparam
-          if ($LASTEXITCODE -ne 0) { throw 'What-If failed. Deployment was not started.' }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw 'What-If failed. Deployment was not started.'
+          }
 
       - name: Deploy infrastructure
         if: ${{ inputs.deploy == true }}
@@ -86,14 +109,19 @@ jobs:
           RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP_DEV }}
         run: |
           $ErrorActionPreference = 'Stop'
+
           az deployment group create `
             --name "pike-main-$env:GITHUB_RUN_NUMBER" `
             --resource-group $env:RESOURCE_GROUP `
             --template-file main.bicep `
             --parameters main.bicepparam
-          if ($LASTEXITCODE -ne 0) { throw 'Azure deployment failed.' }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Azure deployment failed.'
+          }
 
       - name: Clear sensitive environment variable
         if: always()
         shell: pwsh
-        run: Remove-Item Env:VM_ADMIN_PASSWORD -ErrorAction SilentlyContinue
+        run: |
+          Remove-Item Env:VM_ADMIN_PASSWORD -ErrorAction SilentlyContinue
