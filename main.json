@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "9305333621503654464"
+      "templateHash": "12051948219140200496"
     }
   },
   "parameters": {
@@ -13,7 +13,7 @@
       "type": "string",
       "defaultValue": "sampleapp",
       "metadata": {
-        "description": "Workload name used in resource naming."
+        "description": "Workload name."
       }
     },
     "environment": {
@@ -44,26 +44,30 @@
     },
     "logAnalyticsWorkspaceId": {
       "type": "string",
+      "defaultValue": "",
       "metadata": {
-        "description": "Resource ID of the central Log Analytics workspace."
+        "description": "Resource ID of the central Log Analytics workspace. Leave empty while diagnostics are disabled."
       }
     },
-    "sqlPrivateDnsZoneId": {
-      "type": "string",
+    "deploySql": {
+      "type": "bool",
+      "defaultValue": false,
       "metadata": {
-        "description": "Existing Private DNS zone ID for privatelink.database.windows.net."
+        "description": "Enable Azure SQL deployment after configuring its Entra administrator."
       }
     },
     "sqlEntraAdminGroupId": {
       "type": "string",
+      "defaultValue": "",
       "metadata": {
-        "description": "Entra ID group object ID for SQL Server administrator."
+        "description": "Entra security group Object ID for the SQL Server administrator."
       }
     },
     "sqlEntraAdminGroupName": {
       "type": "string",
+      "defaultValue": "",
       "metadata": {
-        "description": "Display name of the Entra ID group for SQL Server administrator."
+        "description": "Display name of the Entra security group for SQL Server administration."
       }
     },
     "costCenter": {
@@ -75,7 +79,7 @@
     "owner": {
       "type": "string",
       "metadata": {
-        "description": "Owning team name, not an individual."
+        "description": "Owning team name."
       }
     },
     "applicationName": {
@@ -111,14 +115,14 @@
       "type": "string",
       "defaultValue": "GP_S_Gen5_2",
       "metadata": {
-        "description": "SQL database SKU name approved by the platform catalog."
+        "description": "SQL database SKU name."
       }
     },
     "sqlSkuTier": {
       "type": "string",
       "defaultValue": "GeneralPurpose",
       "metadata": {
-        "description": "SQL database SKU tier matching sqlSkuName."
+        "description": "SQL database SKU tier."
       }
     },
     "vmSize": {
@@ -138,21 +142,21 @@
     "vmAdminPassword": {
       "type": "securestring",
       "metadata": {
-        "description": "Windows local administrator password. Supply securely from CI secret/environment variable."
+        "description": "Windows local administrator password supplied securely from CI."
       }
     },
     "secretsOfficerGroupIds": {
       "type": "array",
       "defaultValue": [],
       "metadata": {
-        "description": "Key Vault Secrets Officer Entra ID group object IDs."
+        "description": "Key Vault Secrets Officer Entra group Object IDs."
       }
     },
     "secretsReaderGroupIds": {
       "type": "array",
       "defaultValue": [],
       "metadata": {
-        "description": "Key Vault Secrets User Entra ID group object IDs."
+        "description": "Key Vault Secrets User Entra group Object IDs."
       }
     }
   },
@@ -214,14 +218,14 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "3607513205951405877"
+              "templateHash": "16136869629302955546"
             }
           },
           "parameters": {
             "workloadName": {
               "type": "string",
               "metadata": {
-                "description": "Workload name, e.g. \"checkout\". Used in the resource name."
+                "description": "Workload name used in the resource name."
               }
             },
             "environment": {
@@ -234,21 +238,21 @@
                 "prod"
               ],
               "metadata": {
-                "description": "Environment. Must match the workload's deployment target."
+                "description": "Deployment environment."
               }
             },
             "regionCode": {
               "type": "string",
               "defaultValue": "eastus2",
               "metadata": {
-                "description": "Azure region short code, e.g. \"eastus2\"."
+                "description": "Azure region short code."
               }
             },
             "instance": {
               "type": "string",
               "defaultValue": "001",
               "metadata": {
-                "description": "Instance number, zero-padded. Default 001."
+                "description": "Instance number, zero-padded."
               }
             },
             "addressPrefixes": {
@@ -269,13 +273,13 @@
                 }
               ],
               "metadata": {
-                "description": "Subnets to create. Each: { name, addressPrefix, networkSecurityGroupResourceId? }. NSG association is opt-in per subnet — supply networkSecurityGroupResourceId to attach one."
+                "description": "Subnets to create. Each subnet can include name, addressPrefix and optional networkSecurityGroupResourceId."
               }
             },
             "logAnalyticsWorkspaceId": {
               "type": "string",
               "metadata": {
-                "description": "Resource ID of the central Log Analytics workspace for diagnostics."
+                "description": "Resource ID of the central Log Analytics workspace."
               }
             },
             "enableDiagnosticSettings": {
@@ -286,39 +290,39 @@
               "type": "string",
               "defaultValue": "",
               "metadata": {
-                "description": "Resource ID of the hub VNet to peer to (e.g. vnet-hub in the Shared Services subscription). Omit for network-isolated workloads — sandboxes must never set this; see ADR-0001. When set, the deploying identity needs Network Contributor (or equivalent) on the hub VNet's resource group — this is a real, separate permission grant, not automatic. Peering itself does not require on-prem reachability — set hubFirewallPrivateIp for firewall-routed egress inspection, and onPremCidrs too (which sets useRemoteGateways: true on the peering) only when this workload actually needs real on-prem routes; the hub's reciprocal peering must itself allow gateway transit for that to succeed."
+                "description": "Resource ID of the hub VNet to peer to."
               }
             },
             "onPremCidrs": {
               "type": "array",
               "defaultValue": [],
               "metadata": {
-                "description": "On-prem CIDR ranges this VNet must reach through the hub Azure Firewall, e.g. [\"10.0.0.0/8\"]. Empty (default) means no on-prem route is created — most workloads outside domains with an on-prem reachability requirement should leave this empty. Ignored if hubFirewallPrivateIp is not set."
+                "description": "On-prem CIDR ranges reachable through the hub Azure Firewall."
               }
             },
             "hubFirewallPrivateIp": {
               "type": "string",
               "defaultValue": "",
               "metadata": {
-                "description": "Private IP of the hub Azure Firewall (e.g. \"10.240.255.4\"). When set, this module creates a route table sending onPremCidrs AND 0.0.0.0/0 through the firewall (standard hub-spoke egress-inspection pattern) and attaches it to every subnet. The hub side still needs its own per-prefix return route covering this VNet's EXACT address space, not a loose aggregate — a loose aggregate causes a real SQL prelogin-timeout failure, confirmed live 2026-09-25 (GAPS.md #58, docs/adr/0005-shared-nonprod-vnet-pattern.md). Use modules/hub-network/gateway-return-route.bicep (deployed into the hub subscription/resource group, not this one) to create that return route — it is real, callable IaC now, not a manual/out-of-band step. Omit for workloads with no on-prem reachability requirement."
+                "description": "Private IP of the hub Azure Firewall."
               }
             },
             "costCenter": {
               "type": "string",
               "metadata": {
-                "description": "Cost center tag — required, drives FinOps chargeback."
+                "description": "Cost center tag."
               }
             },
             "owner": {
               "type": "string",
               "metadata": {
-                "description": "Owning team — required. Team name, not an individual."
+                "description": "Owning team name."
               }
             },
             "applicationName": {
               "type": "string",
               "metadata": {
-                "description": "Application/service name as it appears in the portal catalog."
+                "description": "Application/service name."
               }
             }
           },
@@ -384,7 +388,7 @@
                       {
                         "name": "value",
                         "count": "[length(parameters('subnets'))]",
-                        "input": "[createObject('name', parameters('subnets')[copyIndex('value')].name, 'addressPrefix', parameters('subnets')[copyIndex('value')].addressPrefix, 'networkSecurityGroupResourceId', tryGet(parameters('subnets')[copyIndex('value')], 'networkSecurityGroupResourceId'), 'routeTableResourceId', if(empty(parameters('hubFirewallPrivateIp')), null(), resourceId('Microsoft.Network/routeTables', format('rt-{0}', variables('vnetName')))))]"
+                        "input": "[createObject('name', parameters('subnets')[copyIndex('value')].name, 'addressPrefix', parameters('subnets')[copyIndex('value')].addressPrefix, 'networkSecurityGroupResourceId', tryGet(parameters('subnets')[copyIndex('value')], 'networkSecurityGroupResourceId'), 'routeTableResourceId', if(empty(parameters('hubFirewallPrivateIp')), null(), resourceId('Microsoft.Network/routeTables', format('rt-{0}', variables('vnetName')))), 'privateEndpointNetworkPolicies', 'Disabled')]"
                       }
                     ]
                   },
@@ -1937,7 +1941,7 @@
             "vnetId": {
               "type": "string",
               "metadata": {
-                "description": "Resource ID of the created VNet — consumed by dependent modules (AKS, private endpoints)."
+                "description": "Resource ID of the created VNet."
               },
               "value": "[reference(resourceId('Microsoft.Resources/deployments', format('deploy-{0}', variables('vnetName'))), '2025-04-01').outputs.resourceId.value]"
             },
@@ -1958,13 +1962,94 @@
             "routeTableId": {
               "type": "string",
               "metadata": {
-                "description": "Resource ID of the hub-firewall route table, or empty string if hubFirewallPrivateIp was not set."
+                "description": "Resource ID of the hub-firewall route table, or empty string when not configured."
               },
               "value": "[if(empty(parameters('hubFirewallPrivateIp')), '', resourceId('Microsoft.Network/routeTables', format('rt-{0}', variables('vnetName'))))]"
             }
           }
         }
       }
+    },
+    {
+      "condition": "[parameters('deploySql')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('sql-private-dns-{0}-{1}', parameters('workloadName'), parameters('environment'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "vnetName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('network-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01').outputs.vnetName.value]"
+          },
+          "vnetResourceGroupName": {
+            "value": "[resourceGroup().name]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "16010675449301044248"
+            }
+          },
+          "parameters": {
+            "vnetName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the application virtual network."
+              }
+            },
+            "vnetResourceGroupName": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().name]",
+              "metadata": {
+                "description": "Resource group containing the application VNet."
+              }
+            }
+          },
+          "variables": {
+            "zoneName": "privatelink.database.windows.net"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/privateDnsZones",
+              "apiVersion": "2020-06-01",
+              "name": "[variables('zoneName')]",
+              "location": "global"
+            },
+            {
+              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+              "apiVersion": "2020-06-01",
+              "name": "[format('{0}/{1}', variables('zoneName'), format('{0}-link', parameters('vnetName')))]",
+              "location": "global",
+              "properties": {
+                "registrationEnabled": false,
+                "virtualNetwork": {
+                  "id": "[resourceId(subscription().subscriptionId, parameters('vnetResourceGroupName'), 'Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateDnsZones', variables('zoneName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "privateDnsZoneId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/privateDnsZones', variables('zoneName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', format('network-{0}-{1}', parameters('workloadName'), parameters('environment')))]"
+      ]
     },
     {
       "type": "Microsoft.Resources/deployments",
@@ -10531,6 +10616,7 @@
       }
     },
     {
+      "condition": "[parameters('deploySql')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "[format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))]",
@@ -10571,7 +10657,7 @@
             "value": "[reference(resourceId('Microsoft.Resources/deployments', format('network-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01').outputs.subnetIds.value['private-endpoints']]"
           },
           "privateDnsZoneId": {
-            "value": "[parameters('sqlPrivateDnsZoneId')]"
+            "value": "[coalesce(tryGet(if(parameters('deploySql'), reference(resourceId('Microsoft.Resources/deployments', format('sql-private-dns-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01'), null()), 'outputs', 'privateDnsZoneId', 'value'), '')]"
           },
           "costCenter": {
             "value": "[parameters('costCenter')]"
@@ -17869,7 +17955,8 @@
         }
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', format('network-{0}-{1}', parameters('workloadName'), parameters('environment')))]"
+        "[resourceId('Microsoft.Resources/deployments', format('network-{0}-{1}', parameters('workloadName'), parameters('environment')))]",
+        "[resourceId('Microsoft.Resources/deployments', format('sql-private-dns-{0}-{1}', parameters('workloadName'), parameters('environment')))]"
       ]
     },
     {
@@ -18227,15 +18314,15 @@
     },
     "sqlServerId": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01').outputs.serverId.value]"
+      "value": "[coalesce(tryGet(if(parameters('deploySql'), reference(resourceId('Microsoft.Resources/deployments', format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01'), null()), 'outputs', 'serverId', 'value'), '')]"
     },
     "sqlServerFqdn": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01').outputs.serverFqdn.value]"
+      "value": "[coalesce(tryGet(if(parameters('deploySql'), reference(resourceId('Microsoft.Resources/deployments', format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01'), null()), 'outputs', 'serverFqdn', 'value'), '')]"
     },
     "sqlDatabaseName": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01').outputs.databaseName.value]"
+      "value": "[coalesce(tryGet(if(parameters('deploySql'), reference(resourceId('Microsoft.Resources/deployments', format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01'), null()), 'outputs', 'databaseName', 'value'), '')]"
     }
   }
 }

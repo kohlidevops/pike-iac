@@ -1,9 +1,7 @@
 // pike-platform :: root deployment
-// Orchestrates the five approved Pike modules into one workload deployment.
-// Deploy to an existing resource group. The Log Analytics workspace and SQL
-// private DNS zone / Entra admin group are prerequisites managed outside this stack.
+// SQL deployment is temporarily disabled until the Entra administrator is configured.
 
-@description('Workload name used in resource naming.')
+@description('Workload name.')
 param workloadName string = 'sampleapp'
 
 @allowed(['dev', 'stg', 'prod'])
@@ -16,22 +14,22 @@ param regionCode string = 'centralindia'
 @description('Zero-padded resource instance number.')
 param instance string = '001'
 
-@description('Resource ID of the central Log Analytics workspace.')
-param logAnalyticsWorkspaceId string
+@description('Resource ID of the central Log Analytics workspace. Leave empty while diagnostics are disabled.')
+param logAnalyticsWorkspaceId string = ''
 
-@description('Existing Private DNS zone ID for privatelink.database.windows.net.')
-param sqlPrivateDnsZoneId string
+@description('Enable Azure SQL deployment after configuring its Entra administrator.')
+param deploySql bool = false
 
-@description('Entra ID group object ID for SQL Server administrator.')
-param sqlEntraAdminGroupId string
+@description('Entra security group Object ID for the SQL Server administrator.')
+param sqlEntraAdminGroupId string = ''
 
-@description('Display name of the Entra ID group for SQL Server administrator.')
-param sqlEntraAdminGroupName string
+@description('Display name of the Entra security group for SQL Server administration.')
+param sqlEntraAdminGroupName string = ''
 
 @description('Cost center tag.')
 param costCenter string
 
-@description('Owning team name, not an individual.')
+@description('Owning team name.')
 param owner string
 
 @description('Application/service name.')
@@ -48,10 +46,10 @@ param vmSubnetPrefix string = '10.40.1.0/24'
 @description('Private endpoint subnet address prefix.')
 param privateEndpointSubnetPrefix string = '10.40.2.0/24'
 
-@description('SQL database SKU name approved by the platform catalog.')
+@description('SQL database SKU name.')
 param sqlSkuName string = 'GP_S_Gen5_2'
 
-@description('SQL database SKU tier matching sqlSkuName.')
+@description('SQL database SKU tier.')
 param sqlSkuTier string = 'GeneralPurpose'
 
 @description('Windows VM SKU.')
@@ -61,13 +59,13 @@ param vmSize string = 'Standard_B2s'
 param vmAdminUsername string = 'azureadmin'
 
 @secure()
-@description('Windows local administrator password. Supply securely from CI secret/environment variable.')
+@description('Windows local administrator password supplied securely from CI.')
 param vmAdminPassword string
 
-@description('Key Vault Secrets Officer Entra ID group object IDs.')
+@description('Key Vault Secrets Officer Entra group Object IDs.')
 param secretsOfficerGroupIds array = []
 
-@description('Key Vault Secrets User Entra ID group object IDs.')
+@description('Key Vault Secrets User Entra group Object IDs.')
 param secretsReaderGroupIds array = []
 
 // 1. Networking
@@ -96,7 +94,16 @@ module network './network/main.bicep' = {
   }
 }
 
-// 2. Storage Account
+// 2. SQL Private DNS (only deployed when deploySql is true)
+module privateDns './sql-database/private-dns.bicep' = if (deploySql) {
+  name: 'sql-private-dns-${workloadName}-${environment}'
+  params: {
+    vnetName: network.outputs.vnetName
+    vnetResourceGroupName: resourceGroup().name
+  }
+}
+
+// 3. Storage Account
 module storage './storage-account/main.bicep' = {
   name: 'storage-${workloadName}-${environment}'
   params: {
@@ -111,7 +118,7 @@ module storage './storage-account/main.bicep' = {
   }
 }
 
-// 3. Key Vault
+// 4. Key Vault
 module keyVault './key-vault/main.bicep' = {
   name: 'key-vault-${workloadName}-${environment}'
   params: {
@@ -128,8 +135,8 @@ module keyVault './key-vault/main.bicep' = {
   }
 }
 
-// 4. SQL Database
-module sql './sql-database/main.bicep' = {
+// 5. SQL Server and database (disabled by default)
+module sql './sql-database/main.bicep' = if (deploySql) {
   name: 'sql-${workloadName}-${environment}'
   params: {
     workloadName: workloadName
@@ -142,14 +149,14 @@ module sql './sql-database/main.bicep' = {
     entraAdminGroupId: sqlEntraAdminGroupId
     entraAdminGroupName: sqlEntraAdminGroupName
     privateEndpointSubnetId: network.outputs.subnetIds['private-endpoints']
-    privateDnsZoneId: sqlPrivateDnsZoneId
+    privateDnsZoneId: privateDns.?outputs.privateDnsZoneId ?? ''
     costCenter: costCenter
     owner: owner
     applicationName: applicationName
   }
 }
 
-// 5. Windows VM
+// 6. Windows VM
 module vm './vm/main.bicep' = {
   name: 'vm-${workloadName}-${environment}'
   params: {
@@ -157,7 +164,7 @@ module vm './vm/main.bicep' = {
     environment: environment
     regionCode: regionCode
     instance: instance
-    subnetResourceId: network.outputs.subnetIds['vm']
+    subnetResourceId: network.outputs.subnetIds.vm
     adminUsername: vmAdminUsername
     adminPassword: vmAdminPassword
     vmSize: vmSize
@@ -169,17 +176,13 @@ module vm './vm/main.bicep' = {
 
 // Deployment outputs
 output vnetId string = network.outputs.vnetId
-
 output vmId string = vm.outputs.vmId
 output vmName string = vm.outputs.vmName
 output vmPrivateIpAddress string = vm.outputs.privateIpAddress
-
 output storageAccountId string = storage.outputs.storageAccountId
 output storageAccountName string = storage.outputs.storageAccountName
-
 output keyVaultId string = keyVault.outputs.vaultId
 output keyVaultName string = keyVault.outputs.vaultName
-
-output sqlServerId string = sql.outputs.serverId
-output sqlServerFqdn string = sql.outputs.serverFqdn
-output sqlDatabaseName string = sql.outputs.databaseName
+output sqlServerId string = sql.?outputs.serverId ?? ''
+output sqlServerFqdn string = sql.?outputs.serverFqdn ?? ''
+output sqlDatabaseName string = sql.?outputs.databaseName ?? ''
