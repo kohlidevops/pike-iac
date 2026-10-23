@@ -1,127 +1,158 @@
-
-name: bicep-deploy-windows
+name: Deploy Pike Bicep Modules
 
 on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: 'Deploy after What-If succeeds'
+        description: "Deploy resources after reviewing What-If"
         required: true
         type: boolean
         default: false
 
 permissions:
-  contents: read
   id-token: write
-
-concurrency:
-  group: bicep-deploy-${{ github.ref }}
-  cancel-in-progress: false
+  contents: read
 
 jobs:
-  validate-and-deploy:
+  deploy:
+    name: Validate and Deploy Bicep
     runs-on: [self-hosted, X64, Windows]
-    timeout-minutes: 45
 
     env:
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       AZURE_LOCATION: centralus
+      AZURE_RESOURCE_GROUP_DEV: ${{ vars.AZURE_RESOURCE_GROUP_DEV }}
       VM_ADMIN_PASSWORD: ${{ secrets.VM_ADMIN_PASSWORD }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify Azure CLI
-        shell: pwsh
-        run: az version
-
-      - name: Compile root Bicep template
+      - name: Configure and Verify Azure CLI
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          az bicep build --file main.bicep
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Root Bicep build failed.'
+
+          $azDir = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin"
+          $az = Join-Path $azDir "az.cmd"
+
+          if (!(Test-Path $az)) {
+            throw "Azure CLI not found at $az"
           }
 
-      - name: Azure login using OIDC
+          # Add Azure CLI to PATH for subsequent workflow steps and actions.
+          Add-Content -Path $env:GITHUB_PATH -Value $azDir
+
+          # Verify Azure CLI using its absolute path.
+          & $az version
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Azure CLI verification failed."
+          }
+
+      - name: Validate required configuration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          if ([string]::IsNullOrWhiteSpace($env:AZURE_RESOURCE_GROUP_DEV)) {
+            throw "Create the GitHub repository variable AZURE_RESOURCE_GROUP_DEV."
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:VM_ADMIN_PASSWORD)) {
+            throw "GitHub secret VM_ADMIN_PASSWORD is missing."
+          }
+
+          if (!(Test-Path "main.bicep")) {
+            throw "main.bicep was not found in the repository root."
+          }
+
+          if (!(Test-Path "main.bicepparam")) {
+            throw "main.bicepparam was not found in the repository root."
+          }
+
+      - name: Validate Bicep template
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
+
+          & $az bicep build --file main.bicep
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bicep build failed."
+          }
+
+      - name: Azure Login using OIDC
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Validate inputs and create resource group
+      - name: Verify Azure subscription
         shell: pwsh
-        env:
-          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP_DEV }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
 
-          if ([string]::IsNullOrWhiteSpace($env:AZURE_SUBSCRIPTION_ID)) {
-            throw 'Missing repository secret AZURE_SUBSCRIPTION_ID.'
-          }
-
-          if ([string]::IsNullOrWhiteSpace($env:RESOURCE_GROUP)) {
-            throw 'Create repository variable AZURE_RESOURCE_GROUP_DEV.'
-          }
-
-          if ([string]::IsNullOrWhiteSpace($env:VM_ADMIN_PASSWORD)) {
-            throw 'Missing repository secret VM_ADMIN_PASSWORD.'
-          }
-
-          az account set --subscription $env:AZURE_SUBSCRIPTION_ID
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Unable to select Azure subscription.'
-          }
-
-          az group create `
-            --name $env:RESOURCE_GROUP `
-            --location $env:AZURE_LOCATION `
-            --output none
+          & $az account show --output table
 
           if ($LASTEXITCODE -ne 0) {
-            throw 'Failed to create or verify resource group.'
+            throw "Azure subscription verification failed."
           }
 
-      - name: What-If deployment
+      - name: Create Resource Group if Needed
         shell: pwsh
-        env:
-          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP_DEV }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
 
-          az deployment group what-if `
-            --name "pike-main-$env:GITHUB_RUN_NUMBER" `
-            --resource-group $env:RESOURCE_GROUP `
+          & $az group create `
+            --name "$env:AZURE_RESOURCE_GROUP_DEV" `
+            --location "$env:AZURE_LOCATION" `
+            --output table
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Resource group creation or verification failed."
+          }
+
+      - name: Bicep What-If Preview
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
+
+          & $az deployment group what-if `
+            --resource-group "$env:AZURE_RESOURCE_GROUP_DEV" `
             --template-file main.bicep `
-            --parameters main.bicepparam
+            --parameters main.bicepparam `
+            --output json
 
           if ($LASTEXITCODE -ne 0) {
-            throw 'What-If failed. Deployment was not started.'
+            throw "Bicep What-If preview failed."
           }
 
-      - name: Deploy infrastructure
+      - name: Deploy Bicep Modules
         if: ${{ inputs.deploy == true }}
         shell: pwsh
-        env:
-          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP_DEV }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
 
-          az deployment group create `
-            --name "pike-main-$env:GITHUB_RUN_NUMBER" `
-            --resource-group $env:RESOURCE_GROUP `
+          & $az deployment group create `
+            --name "pike-deployment-${{ github.run_number }}" `
+            --resource-group "$env:AZURE_RESOURCE_GROUP_DEV" `
             --template-file main.bicep `
-            --parameters main.bicepparam
+            --parameters main.bicepparam `
+            --output table
 
           if ($LASTEXITCODE -ne 0) {
-            throw 'Azure deployment failed.'
+            throw "Bicep deployment failed."
           }
 
-      - name: Clear sensitive environment variable
-        if: always()
+      - name: Deployment skipped
+        if: ${{ inputs.deploy == false }}
         shell: pwsh
         run: |
-          Remove-Item Env:VM_ADMIN_PASSWORD -ErrorAction SilentlyContinue
+          Write-Host "What-If completed. Deployment was not requested."
+          Write-Host "Run the workflow again with Deploy enabled to deploy resources."
