@@ -51,6 +51,16 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
     publicNetworkAccess: environment == 'prod' ? 'Disabled' : 'Enabled'
     supportsHttpsTrafficOnly: true
     diagnosticSettings: enableDiagnosticSettings ? [{ workspaceResourceId: logAnalyticsWorkspaceId }] : []
+        blobServices: {
+      deleteRetentionPolicyEnabled: true
+      deleteRetentionPolicyDays: 6
+      deleteRetentionPolicyAllowPermanentDelete: false
+      containerDeleteRetentionPolicyEnabled: true
+      containerDeleteRetentionPolicyDays: 7
+      containerDeleteRetentionPolicyAllowPermanentDelete: false
+      lastAccessTimeTrackingPolicyEnabled: false
+      automaticSnapshotPolicyEnabled: false
+    }
   }
 }
 

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "12051948219140200496"
+      "templateHash": "4932845981099691484"
     }
   },
   "parameters": {
@@ -2093,7 +2093,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "1343827579616040790"
+              "templateHash": "84238117243342036"
             }
           },
           "parameters": {
@@ -2196,7 +2196,19 @@
                   "supportsHttpsTrafficOnly": {
                     "value": true
                   },
-                  "diagnosticSettings": "[if(parameters('enableDiagnosticSettings'), createObject('value', createArray(createObject('workspaceResourceId', parameters('logAnalyticsWorkspaceId')))), createObject('value', createArray()))]"
+                  "diagnosticSettings": "[if(parameters('enableDiagnosticSettings'), createObject('value', createArray(createObject('workspaceResourceId', parameters('logAnalyticsWorkspaceId')))), createObject('value', createArray()))]",
+                  "blobServices": {
+                    "value": {
+                      "deleteRetentionPolicyEnabled": true,
+                      "deleteRetentionPolicyDays": 6,
+                      "deleteRetentionPolicyAllowPermanentDelete": false,
+                      "containerDeleteRetentionPolicyEnabled": true,
+                      "containerDeleteRetentionPolicyDays": 7,
+                      "containerDeleteRetentionPolicyAllowPermanentDelete": false,
+                      "lastAccessTimeTrackingPolicyEnabled": false,
+                      "automaticSnapshotPolicyEnabled": false
+                    }
+                  }
                 },
                 "template": {
                   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
