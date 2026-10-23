@@ -21,6 +21,7 @@ param instance string = '001'
 
 @description('Resource ID of the central Log Analytics workspace.')
 param logAnalyticsWorkspaceId string
+param enableDiagnosticSettings bool = false
 
 @description('SQL database SKU name — must be one of golden-paths/database-request/catalog.md\'s approved tiers, e.g. GP_S_Gen5_2 (General Purpose Serverless) or S1 (Standard DTU).')
 param skuName string
@@ -103,9 +104,7 @@ module sqlServer 'br/public:avm/res/sql/server:0.22.1' = {
         }
         availabilityZone: -1 // no zone pinning by default; revisit per-tier if a catalog entry needs zone-redundant HA
         tags: mandatoryTags
-        diagnosticSettings: [
-          { workspaceResourceId: logAnalyticsWorkspaceId }
-        ]
+        diagnosticSettings: enableDiagnosticSettings ? [{ workspaceResourceId: logAnalyticsWorkspaceId }] : []
       }
     ]
   }

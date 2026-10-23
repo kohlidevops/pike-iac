@@ -17,6 +17,7 @@ param instance string = '001'
 
 @description('Resource ID of the central Log Analytics workspace.')
 param logAnalyticsWorkspaceId string
+param enableDiagnosticSettings bool = false
 
 @description('Principal IDs (Entra ID GROUP object IDs, not users) granted Key Vault Secrets Officer.')
 param secretsOfficerGroupIds array = []
@@ -72,9 +73,7 @@ module vault 'br/public:avm/res/key-vault/vault:0.9.0' = {
       defaultAction: 'Deny' // least-privilege default; publicNetworkAccess above governs prod vs non-prod
       bypass: 'AzureServices'
     }
-    diagnosticSettings: [
-      { workspaceResourceId: logAnalyticsWorkspaceId }
-    ]
+    diagnosticSettings: enableDiagnosticSettings ? [{ workspaceResourceId: logAnalyticsWorkspaceId }] : []
     roleAssignments: concat(secretsOfficerRoleAssignments, secretsReaderRoleAssignments)
   }
 }

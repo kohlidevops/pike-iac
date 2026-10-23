@@ -26,6 +26,7 @@ param subnets array = [
 
 @description('Resource ID of the central Log Analytics workspace for diagnostics.')
 param logAnalyticsWorkspaceId string
+param enableDiagnosticSettings bool = false
 
 @description('Resource ID of the hub VNet to peer to (e.g. vnet-hub in the Shared Services subscription). Omit for network-isolated workloads — sandboxes must never set this; see ADR-0001. When set, the deploying identity needs Network Contributor (or equivalent) on the hub VNet\'s resource group — this is a real, separate permission grant, not automatic. Peering itself does not require on-prem reachability — set hubFirewallPrivateIp for firewall-routed egress inspection, and onPremCidrs too (which sets useRemoteGateways: true on the peering) only when this workload actually needs real on-prem routes; the hub\'s reciprocal peering must itself allow gateway transit for that to succeed.')
 param hubVnetResourceId string = ''
@@ -121,11 +122,7 @@ module vnet 'br/public:avm/res/network/virtual-network:0.5.1' = {
     }]
     tags: mandatoryTags
     // Diagnostic settings are opt-OUT, not opt-in — see docs/naming-and-tagging.md
-    diagnosticSettings: [
-      {
-        workspaceResourceId: logAnalyticsWorkspaceId
-      }
-    ]
+    diagnosticSettings: enableDiagnosticSettings ? [{ workspaceResourceId: logAnalyticsWorkspaceId }] : []
     // Hub-spoke peering (GAPS.md #19) — opt-in via hubVnetResourceId. The AVM
     // module deploys both directions (remotePeeringEnabled: true) itself, via
     // a cross-scope nested deployment — the caller's identity still needs

@@ -15,6 +15,7 @@ param instance string = '001'
 
 @description('Resource ID of the central Log Analytics workspace.')
 param logAnalyticsWorkspaceId string
+param enableDiagnosticSettings bool = false
 
 @allowed(['Standard_LRS', 'Standard_ZRS', 'Standard_GRS'])
 param skuName string = 'Standard_ZRS'
@@ -49,9 +50,7 @@ module storageAccount 'br/public:avm/res/storage/storage-account:0.14.3' = {
     minimumTlsVersion: 'TLS1_2'
     publicNetworkAccess: environment == 'prod' ? 'Disabled' : 'Enabled'
     supportsHttpsTrafficOnly: true
-    diagnosticSettings: [
-      { workspaceResourceId: logAnalyticsWorkspaceId }
-    ]
+    diagnosticSettings: enableDiagnosticSettings ? [{ workspaceResourceId: logAnalyticsWorkspaceId }] : []
   }
 }
 
