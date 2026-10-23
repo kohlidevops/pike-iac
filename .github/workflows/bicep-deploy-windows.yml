@@ -1,0 +1,99 @@
+name: bicep-deploy-windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Deploy after What-If succeeds (otherwise validation/What-If only)'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: bicep-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-deploy:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+      VM_ADMIN_PASSWORD: ${{ secrets.VM_ADMIN_PASSWORD }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Azure CLI is available on the Windows runner
+        shell: pwsh
+        run: az version
+
+      - name: Compile Bicep templates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = Get-ChildItem -Path . -Recurse -Filter '*.bicep' |
+            Where-Object { $_.FullName -notmatch '[\/]\.git[\/]' }
+          if (-not $files) { throw 'No .bicep files found.' }
+          foreach ($file in $files) {
+            Write-Host "Compiling $($file.FullName)"
+            az bicep build --file $file.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Bicep build failed: $($file.FullName)" }
+          }
+
+      - name: Azure login using OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID_DEV }}
+
+      - name: Validate deployment inputs
+        shell: pwsh
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP_DEV }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:AZURE_SUBSCRIPTION_ID)) { throw 'Set repository variable AZURE_SUBSCRIPTION_ID_DEV.' }
+          if ([string]::IsNullOrWhiteSpace($env:RESOURCE_GROUP)) { throw 'Set repository variable AZURE_RESOURCE_GROUP_DEV.' }
+          if ([string]::IsNullOrWhiteSpace($env:VM_ADMIN_PASSWORD)) { throw 'Set repository secret VM_ADMIN_PASSWORD.' }
+          az account set --subscription $env:AZURE_SUBSCRIPTION_ID
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to select the Azure subscription.' }
+          az group show --name $env:RESOURCE_GROUP --output none
+          if ($LASTEXITCODE -ne 0) { throw 'The target resource group must already exist.' }
+
+      - name: What-If deployment
+        shell: pwsh
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP_DEV }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          az deployment group what-if `
+            --name "pike-main-$env:GITHUB_RUN_NUMBER" `
+            --resource-group $env:RESOURCE_GROUP `
+            --template-file main.bicep `
+            --parameters main.bicepparam
+          if ($LASTEXITCODE -ne 0) { throw 'What-If failed. Deployment was not started.' }
+
+      - name: Deploy infrastructure
+        if: ${{ inputs.deploy == true }}
+        shell: pwsh
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP_DEV }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          az deployment group create `
+            --name "pike-main-$env:GITHUB_RUN_NUMBER" `
+            --resource-group $env:RESOURCE_GROUP `
+            --template-file main.bicep `
+            --parameters main.bicepparam
+          if ($LASTEXITCODE -ne 0) { throw 'Azure deployment failed.' }
+
+      - name: Clear sensitive environment variable
+        if: always()
+        shell: pwsh
+        run: Remove-Item Env:VM_ADMIN_PASSWORD -ErrorAction SilentlyContinue
