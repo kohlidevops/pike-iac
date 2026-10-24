@@ -1,8 +1,3 @@
-// DEV deployment parameters.
-// SQL is temporarily disabled until the Entra administrator group is available.
-// Diagnostics remain disabled until a Log Analytics workspace is configured.
-// Never commit real passwords to source control.
-
 using 'main.bicep'
 
 param workloadName = 'sampleapp'
@@ -10,19 +5,20 @@ param environment = 'dev'
 param regionCode = 'centralus'
 param instance = '001'
 
-// SQL deployment switch
-param deploySql = false
+// SQL deployment
+param deploySql = true
 
-// Required only when deploySql is true
-param sqlEntraAdminGroupId = ''
-param sqlEntraAdminGroupName = ''
+// Required: replace with a real Entra security group.
+param sqlEntraAdminObjectId = '3e7e4269-f773-4b01-9a41-2261bf9c558b'
+param sqlEntraAdminLogin = 'sathish.vit099_gmail.com#EXT#@sathishvit099gmail.onmicrosoft.com'
+param sqlEntraTenantId = 'ff360367-7322-4db4-97a7-ade6839352de'
 
 // Governance tags
 param costCenter = 'CC-1001'
 param owner = 'platform-team'
 param applicationName = 'sampleapp'
 
-// Networking
+// Networking — existing configuration retained
 param addressPrefixes = [
   '10.40.0.0/16'
 ]
@@ -30,11 +26,11 @@ param addressPrefixes = [
 param vmSubnetPrefix = '10.40.1.0/24'
 param privateEndpointSubnetPrefix = '10.40.2.0/24'
 
-// SQL SKU settings (unused while SQL is disabled)
-param sqlSkuName = 'GP_S_Gen5_2'
+// SQL SKU
+param sqlSkuName = 'GP_Gen5_2'
 param sqlSkuTier = 'GeneralPurpose'
 
-// Windows VM
+// Windows VM — existing configuration retained
 param vmSize = 'Standard_B2s'
 param vmAdminUsername = 'azureadmin'
 param vmAdminPassword = readEnvironmentVariable('VM_ADMIN_PASSWORD')

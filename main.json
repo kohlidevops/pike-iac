@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "4932845981099691484"
+      "templateHash": "18292302732651135320"
     }
   },
   "parameters": {
@@ -53,21 +53,28 @@
       "type": "bool",
       "defaultValue": false,
       "metadata": {
-        "description": "Enable Azure SQL deployment after configuring its Entra administrator."
+        "description": "Enable Azure SQL deployment."
       }
     },
-    "sqlEntraAdminGroupId": {
+    "sqlEntraAdminObjectId": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Entra security group Object ID for the SQL Server administrator."
+        "description": "Microsoft Entra administrator object ID for SQL Server."
       }
     },
-    "sqlEntraAdminGroupName": {
+    "sqlEntraAdminLogin": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Display name of the Entra security group for SQL Server administration."
+        "description": "Microsoft Entra administrator login name (UPN) for SQL Server."
+      }
+    },
+    "sqlEntraTenantId": {
+      "type": "string",
+      "defaultValue": "[subscription().tenantId]",
+      "metadata": {
+        "description": "Tenant ID containing the SQL administrator."
       }
     },
     "costCenter": {
@@ -108,7 +115,7 @@
       "type": "string",
       "defaultValue": "10.40.2.0/24",
       "metadata": {
-        "description": "Private endpoint subnet address prefix."
+        "description": "Private endpoint subnet address prefix reserved for future use."
       }
     },
     "sqlSkuName": {
@@ -1969,87 +1976,6 @@
           }
         }
       }
-    },
-    {
-      "condition": "[parameters('deploySql')]",
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "[format('sql-private-dns-{0}-{1}', parameters('workloadName'), parameters('environment'))]",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "vnetName": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('network-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01').outputs.vnetName.value]"
-          },
-          "vnetResourceGroupName": {
-            "value": "[resourceGroup().name]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.48.1.52935",
-              "templateHash": "16010675449301044248"
-            }
-          },
-          "parameters": {
-            "vnetName": {
-              "type": "string",
-              "metadata": {
-                "description": "Name of the application virtual network."
-              }
-            },
-            "vnetResourceGroupName": {
-              "type": "string",
-              "defaultValue": "[resourceGroup().name]",
-              "metadata": {
-                "description": "Resource group containing the application VNet."
-              }
-            }
-          },
-          "variables": {
-            "zoneName": "privatelink.database.windows.net"
-          },
-          "resources": [
-            {
-              "type": "Microsoft.Network/privateDnsZones",
-              "apiVersion": "2020-06-01",
-              "name": "[variables('zoneName')]",
-              "location": "global"
-            },
-            {
-              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
-              "apiVersion": "2020-06-01",
-              "name": "[format('{0}/{1}', variables('zoneName'), format('{0}-link', parameters('vnetName')))]",
-              "location": "global",
-              "properties": {
-                "registrationEnabled": false,
-                "virtualNetwork": {
-                  "id": "[resourceId(subscription().subscriptionId, parameters('vnetResourceGroupName'), 'Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
-                }
-              },
-              "dependsOn": [
-                "[resourceId('Microsoft.Network/privateDnsZones', variables('zoneName'))]"
-              ]
-            }
-          ],
-          "outputs": {
-            "privateDnsZoneId": {
-              "type": "string",
-              "value": "[resourceId('Microsoft.Network/privateDnsZones', variables('zoneName'))]"
-            }
-          }
-        }
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', format('network-{0}-{1}', parameters('workloadName'), parameters('environment')))]"
-      ]
     },
     {
       "type": "Microsoft.Resources/deployments",
@@ -10659,17 +10585,14 @@
           "skuTier": {
             "value": "[parameters('sqlSkuTier')]"
           },
-          "entraAdminGroupId": {
-            "value": "[parameters('sqlEntraAdminGroupId')]"
+          "entraAdminObjectId": {
+            "value": "[parameters('sqlEntraAdminObjectId')]"
           },
-          "entraAdminGroupName": {
-            "value": "[parameters('sqlEntraAdminGroupName')]"
+          "entraAdminLogin": {
+            "value": "[parameters('sqlEntraAdminLogin')]"
           },
-          "privateEndpointSubnetId": {
-            "value": "[reference(resourceId('Microsoft.Resources/deployments', format('network-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01').outputs.subnetIds.value['private-endpoints']]"
-          },
-          "privateDnsZoneId": {
-            "value": "[coalesce(tryGet(if(parameters('deploySql'), reference(resourceId('Microsoft.Resources/deployments', format('sql-private-dns-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01'), null()), 'outputs', 'privateDnsZoneId', 'value'), '')]"
+          "entraTenantId": {
+            "value": "[parameters('sqlEntraTenantId')]"
           },
           "costCenter": {
             "value": "[parameters('costCenter')]"
@@ -10688,14 +10611,14 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "2511223556531849088"
+              "templateHash": "13603420384049289367"
             }
           },
           "parameters": {
             "workloadName": {
               "type": "string",
               "metadata": {
-                "description": "Workload name, e.g. \"checkout\"."
+                "description": "Workload name, e.g. sampleapp."
               }
             },
             "environment": {
@@ -10710,7 +10633,7 @@
             },
             "regionCode": {
               "type": "string",
-              "defaultValue": "eastus2",
+              "defaultValue": "centralus",
               "metadata": {
                 "description": "Azure region short code."
               }
@@ -10721,6 +10644,7 @@
             },
             "logAnalyticsWorkspaceId": {
               "type": "string",
+              "defaultValue": "",
               "metadata": {
                 "description": "Resource ID of the central Log Analytics workspace."
               }
@@ -10732,44 +10656,32 @@
             "skuName": {
               "type": "string",
               "metadata": {
-                "description": "SQL database SKU name — must be one of golden-paths/database-request/catalog.md's approved tiers, e.g. GP_S_Gen5_2 (General Purpose Serverless) or S1 (Standard DTU)."
+                "description": "SQL database SKU name, e.g. GP_Gen5_2."
               }
             },
             "skuTier": {
               "type": "string",
               "metadata": {
-                "description": "SQL database SKU tier, e.g. GeneralPurpose or Standard — must match skuName per Azure's SKU table."
+                "description": "SQL database SKU tier, e.g. GeneralPurpose."
               }
             },
-            "entraAdminGroupId": {
+            "entraAdminObjectId": {
               "type": "string",
               "metadata": {
-                "description": "Entra ID GROUP object ID for the server admin — never an individual user, per least-privilege convention."
+                "description": "Microsoft Entra administrator object ID."
               }
             },
-            "entraAdminGroupName": {
+            "entraAdminLogin": {
               "type": "string",
               "metadata": {
-                "description": "Display name of the Entra ID group set as server admin (for portal readability)."
+                "description": "Microsoft Entra administrator login name (UPN)."
               }
             },
             "entraTenantId": {
               "type": "string",
               "defaultValue": "[subscription().tenantId]",
               "metadata": {
-                "description": "Tenant ID the Entra admin group belongs to."
-              }
-            },
-            "privateEndpointSubnetId": {
-              "type": "string",
-              "metadata": {
-                "description": "Subnet resource ID (from modules/network) for the private endpoint."
-              }
-            },
-            "privateDnsZoneId": {
-              "type": "string",
-              "metadata": {
-                "description": "Private DNS zone resource ID for privatelink.database.windows.net, for the private endpoint's DNS registration."
+                "description": "Tenant ID containing the administrator."
               }
             },
             "costCenter": {
@@ -10816,35 +10728,15 @@
                   },
                   "administrators": {
                     "value": {
-                      "login": "[parameters('entraAdminGroupName')]",
-                      "sid": "[parameters('entraAdminGroupId')]",
+                      "login": "[parameters('entraAdminLogin')]",
+                      "sid": "[parameters('entraAdminObjectId')]",
                       "tenantId": "[parameters('entraTenantId')]",
-                      "principalType": "Group",
+                      "principalType": "User",
                       "azureADOnlyAuthentication": true
                     }
                   },
-                  "administratorLogin": {
-                    "value": "[format('sql-admin-{0}', uniqueString(resourceGroup().id, variables('serverName')))]"
-                  },
-                  "administratorLoginPassword": {
-                    "value": "[guid(resourceGroup().id, variables('serverName'))]"
-                  },
                   "publicNetworkAccess": {
-                    "value": "Disabled"
-                  },
-                  "privateEndpoints": {
-                    "value": [
-                      {
-                        "subnetResourceId": "[parameters('privateEndpointSubnetId')]",
-                        "privateDnsZoneGroup": {
-                          "privateDnsZoneGroupConfigs": [
-                            {
-                              "privateDnsZoneResourceId": "[parameters('privateDnsZoneId')]"
-                            }
-                          ]
-                        }
-                      }
-                    ]
+                    "value": "Enabled"
                   },
                   "securityAlertPolicies": {
                     "value": [
@@ -17965,11 +17857,7 @@
             }
           }
         }
-      },
-      "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', format('network-{0}-{1}', parameters('workloadName'), parameters('environment')))]",
-        "[resourceId('Microsoft.Resources/deployments', format('sql-private-dns-{0}-{1}', parameters('workloadName'), parameters('environment')))]"
-      ]
+      }
     },
     {
       "type": "Microsoft.Resources/deployments",
@@ -18326,15 +18214,15 @@
     },
     "sqlServerId": {
       "type": "string",
-      "value": "[coalesce(tryGet(if(parameters('deploySql'), reference(resourceId('Microsoft.Resources/deployments', format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01'), null()), 'outputs', 'serverId', 'value'), '')]"
+      "value": "[if(parameters('deploySql'), reference(resourceId('Microsoft.Resources/deployments', format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01').outputs.serverId.value, '')]"
     },
     "sqlServerFqdn": {
       "type": "string",
-      "value": "[coalesce(tryGet(if(parameters('deploySql'), reference(resourceId('Microsoft.Resources/deployments', format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01'), null()), 'outputs', 'serverFqdn', 'value'), '')]"
+      "value": "[if(parameters('deploySql'), reference(resourceId('Microsoft.Resources/deployments', format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01').outputs.serverFqdn.value, '')]"
     },
     "sqlDatabaseName": {
       "type": "string",
-      "value": "[coalesce(tryGet(if(parameters('deploySql'), reference(resourceId('Microsoft.Resources/deployments', format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01'), null()), 'outputs', 'databaseName', 'value'), '')]"
+      "value": "[if(parameters('deploySql'), reference(resourceId('Microsoft.Resources/deployments', format('sql-{0}-{1}', parameters('workloadName'), parameters('environment'))), '2025-04-01').outputs.databaseName.value, '')]"
     }
   }
 }

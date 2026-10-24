@@ -1,5 +1,5 @@
-// pike-platform :: root deployment
-// SQL deployment is temporarily disabled until the Entra administrator is configured.
+
+ // pike-platform :: root deployment
 
 @description('Workload name.')
 param workloadName string = 'sampleapp'
@@ -17,14 +17,17 @@ param instance string = '001'
 @description('Resource ID of the central Log Analytics workspace. Leave empty while diagnostics are disabled.')
 param logAnalyticsWorkspaceId string = ''
 
-@description('Enable Azure SQL deployment after configuring its Entra administrator.')
+@description('Enable Azure SQL deployment.')
 param deploySql bool = false
 
-@description('Entra security group Object ID for the SQL Server administrator.')
-param sqlEntraAdminGroupId string = ''
+@description('Microsoft Entra administrator object ID for SQL Server.')
+param sqlEntraAdminObjectId string = ''
 
-@description('Display name of the Entra security group for SQL Server administration.')
-param sqlEntraAdminGroupName string = ''
+@description('Microsoft Entra administrator login name (UPN) for SQL Server.')
+param sqlEntraAdminLogin string = ''
+
+@description('Tenant ID containing the SQL administrator.')
+param sqlEntraTenantId string = subscription().tenantId
 
 @description('Cost center tag.')
 param costCenter string
@@ -43,7 +46,7 @@ param addressPrefixes array = [
 @description('VM subnet address prefix.')
 param vmSubnetPrefix string = '10.40.1.0/24'
 
-@description('Private endpoint subnet address prefix.')
+@description('Private endpoint subnet address prefix reserved for future use.')
 param privateEndpointSubnetPrefix string = '10.40.2.0/24'
 
 @description('SQL database SKU name.')
@@ -94,16 +97,7 @@ module network './network/main.bicep' = {
   }
 }
 
-// 2. SQL Private DNS (only deployed when deploySql is true)
-module privateDns './sql-database/private-dns.bicep' = if (deploySql) {
-  name: 'sql-private-dns-${workloadName}-${environment}'
-  params: {
-    vnetName: network.outputs.vnetName
-    vnetResourceGroupName: resourceGroup().name
-  }
-}
-
-// 3. Storage Account
+// 2. Storage Account
 module storage './storage-account/main.bicep' = {
   name: 'storage-${workloadName}-${environment}'
   params: {
@@ -118,7 +112,7 @@ module storage './storage-account/main.bicep' = {
   }
 }
 
-// 4. Key Vault
+// 3. Key Vault
 module keyVault './key-vault/main.bicep' = {
   name: 'key-vault-${workloadName}-${environment}'
   params: {
@@ -135,7 +129,7 @@ module keyVault './key-vault/main.bicep' = {
   }
 }
 
-// 5. SQL Server and database (disabled by default)
+// 4. SQL Server and database
 module sql './sql-database/main.bicep' = if (deploySql) {
   name: 'sql-${workloadName}-${environment}'
   params: {
@@ -146,17 +140,16 @@ module sql './sql-database/main.bicep' = if (deploySql) {
     logAnalyticsWorkspaceId: logAnalyticsWorkspaceId
     skuName: sqlSkuName
     skuTier: sqlSkuTier
-    entraAdminGroupId: sqlEntraAdminGroupId
-    entraAdminGroupName: sqlEntraAdminGroupName
-    privateEndpointSubnetId: network.outputs.subnetIds['private-endpoints']
-    privateDnsZoneId: privateDns.?outputs.privateDnsZoneId ?? ''
+    entraAdminObjectId: sqlEntraAdminObjectId
+    entraAdminLogin: sqlEntraAdminLogin
+    entraTenantId: sqlEntraTenantId
     costCenter: costCenter
     owner: owner
     applicationName: applicationName
   }
 }
 
-// 6. Windows VM
+// 5. Windows VM
 module vm './vm/main.bicep' = {
   name: 'vm-${workloadName}-${environment}'
   params: {
@@ -183,6 +176,6 @@ output storageAccountId string = storage.outputs.storageAccountId
 output storageAccountName string = storage.outputs.storageAccountName
 output keyVaultId string = keyVault.outputs.vaultId
 output keyVaultName string = keyVault.outputs.vaultName
-output sqlServerId string = sql.?outputs.serverId ?? ''
-output sqlServerFqdn string = sql.?outputs.serverFqdn ?? ''
-output sqlDatabaseName string = sql.?outputs.databaseName ?? ''
+output sqlServerId string = deploySql ? sql.outputs.serverId : ''
+output sqlServerFqdn string = deploySql ? sql.outputs.serverFqdn : ''
+output sqlDatabaseName string = deploySql ? sql.outputs.databaseName : ''
