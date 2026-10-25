@@ -1,0 +1,75 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-08-01/managementGroupDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.48.1.52935",
+      "templateHash": "1016985487741407989"
+    }
+  },
+  "parameters": {
+    "roleName": {
+      "type": "string",
+      "defaultValue": "Pike IaC Deploy RBAC Grantor",
+      "metadata": {
+        "description": "Display name of the custom role. Changing it changes the role GUID (it seeds guid()), so treat it as fixed once deployed."
+      }
+    },
+    "assignableScopes": {
+      "type": "array",
+      "defaultValue": [
+        "[managementGroup().id]"
+      ],
+      "metadata": {
+        "description": "Where the role may be assigned. Default: this management group and everything under it. Azure allows at most one management group here."
+      }
+    }
+  },
+  "variables": {
+    "actions": [
+      "Microsoft.Authorization/roleAssignments/write",
+      "Microsoft.Authorization/roleAssignments/read",
+      "Microsoft.Resources/deployments/write",
+      "Microsoft.Resources/deployments/read",
+      "Microsoft.Resources/deployments/cancel/action",
+      "Microsoft.OperationalInsights/workspaces/sharedkeys/action",
+      "Microsoft.Resources/deployments/operationstatuses/read"
+    ]
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Authorization/roleDefinitions",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(managementGroup().id, parameters('roleName'))]",
+      "properties": {
+        "roleName": "[parameters('roleName')]",
+        "description": "Create/read role assignments, resource-group-scoped deployments, and Log Analytics workspace shared-keys reads only — no write access to any other resource type. Every assignment covering the roleAssignments action MUST carry an ABAC condition restricting it to an explicit role-definition allowlist, per docs/runbooks/pipeline-identities.md — never assign that action unconditioned. The sharedkeys action is not a roleAssignments write; scope it tightly (one workspace resource) instead. Managed by pike-platform (ADR-0008 decision B pattern).",
+        "type": "CustomRole",
+        "permissions": [
+          {
+            "actions": "[variables('actions')]",
+            "notActions": []
+          }
+        ],
+        "assignableScopes": "[parameters('assignableScopes')]"
+      }
+    }
+  ],
+  "outputs": {
+    "roleDefinitionGuid": {
+      "type": "string",
+      "metadata": {
+        "description": "Role definition GUID. Pass this to the role-assignment command in docs/runbooks/pipeline-identities.md, always together with a scope-appropriate ABAC condition — never assign this role unconditioned."
+      },
+      "value": "[guid(managementGroup().id, parameters('roleName'))]"
+    },
+    "roleDefinitionId": {
+      "type": "string",
+      "metadata": {
+        "description": "Full resource ID of the role definition."
+      },
+      "value": "[extensionResourceId(managementGroup().id, 'Microsoft.Authorization/roleDefinitions', guid(managementGroup().id, parameters('roleName')))]"
+    }
+  }
+}
