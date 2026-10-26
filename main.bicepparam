@@ -1,3 +1,4 @@
+
 using 'main.bicep'
 
 param workloadName = 'sampleapp'
@@ -8,7 +9,13 @@ param instance = '001'
 // SQL deployment
 param deploySql = true
 
-// Required: replace with a real Entra security group.
+// Azure OpenAI deployment
+param deployOpenAI = true
+param openAiAccountName = 'pike-openai-sampleapp-dev-001'
+param openAiSkuName = 'S0'
+param openAiPublicNetworkAccess = 'Enabled'
+
+// SQL administrator
 param sqlEntraAdminObjectId = '3e7e4269-f773-4b01-9a41-2261bf9c558b'
 param sqlEntraAdminLogin = 'sathish.vit099_gmail.com#EXT#@sathishvit099gmail.onmicrosoft.com'
 param sqlEntraTenantId = 'ff360367-7322-4db4-97a7-ade6839352de'
@@ -18,7 +25,7 @@ param costCenter = 'CC-1001'
 param owner = 'platform-team'
 param applicationName = 'sampleapp'
 
-// Networking — existing configuration retained
+// Networking
 param addressPrefixes = [
   '10.40.0.0/16'
 ]
@@ -30,7 +37,7 @@ param privateEndpointSubnetPrefix = '10.40.2.0/24'
 param sqlSkuName = 'GP_Gen5_2'
 param sqlSkuTier = 'GeneralPurpose'
 
-// Windows VM — existing configuration retained
+// Windows VM
 param vmSize = 'Standard_B2s'
 param vmAdminUsername = 'azureadmin'
 param vmAdminPassword = readEnvironmentVariable('VM_ADMIN_PASSWORD')

@@ -20,6 +20,22 @@ param logAnalyticsWorkspaceId string = ''
 @description('Enable Azure SQL deployment.')
 param deploySql bool = false
 
+@description('Enable Azure OpenAI deployment.')
+param deployOpenAI bool = false
+
+@description('Azure OpenAI account name. Must be globally unique.')
+param openAiAccountName string = 'pike-openai-sampleapp-dev-001'
+
+@description('Azure OpenAI SKU name.')
+param openAiSkuName string = 'S0'
+
+@description('Azure OpenAI public network access.')
+@allowed([
+  'Enabled'
+  'Disabled'
+])
+param openAiPublicNetworkAccess string = 'Enabled'
+
 @description('Microsoft Entra administrator object ID for SQL Server.')
 param sqlEntraAdminObjectId string = ''
 
@@ -167,6 +183,26 @@ module vm './vm/main.bicep' = {
   }
 }
 
+// 6. Azure OpenAI
+module openai './openai/main.bicep' = if (deployOpenAI) {
+  name: 'openai-${workloadName}-${environment}'
+  params: {
+    openAiAccountName: openAiAccountName
+    location: resourceGroup().location
+    tags: {
+      environment: environment
+      managedBy: 'pike-iac'
+      module: 'openai'
+      workload: workloadName
+      costCenter: costCenter
+      owner: owner
+      applicationName: applicationName
+    }
+    publicNetworkAccess: openAiPublicNetworkAccess
+    skuName: openAiSkuName
+  }
+}
+
 // Deployment outputs
 output vnetId string = network.outputs.vnetId
 output vmId string = vm.outputs.vmId
@@ -179,3 +215,6 @@ output keyVaultName string = keyVault.outputs.vaultName
 output sqlServerId string = deploySql ? sql.outputs.serverId : ''
 output sqlServerFqdn string = deploySql ? sql.outputs.serverFqdn : ''
 output sqlDatabaseName string = deploySql ? sql.outputs.databaseName : ''
+output openAiAccountId string = deployOpenAI ? openai.outputs.openAiAccountId : ''
+output openAiEndpoint string = deployOpenAI ? openai.outputs.openAiEndpoint : ''
+output openAiAccountNameOutput string = deployOpenAI ? openai.outputs.openAiAccountName : ''
