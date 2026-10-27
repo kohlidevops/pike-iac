@@ -2,7 +2,7 @@
 using './main.bicep'
 
 // -----------------------------------------------------------------------------
-// Purpose: Supply representative parameters for validation.
+// Purpose: Supply representative parameters for validation
 // -----------------------------------------------------------------------------
 
 param openAiAccountName = 'pike-openai-test-001'
@@ -16,3 +16,4 @@ param tags = {
 
 param publicNetworkAccess = 'Enabled'
 param skuName = 'S0'
+
