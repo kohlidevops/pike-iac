@@ -2,7 +2,7 @@
 targetScope = 'resourceGroup'
 
 // -----------------------------------------------------------------------------
-// Purpose: Deploy an Azure OpenAI account.
+// Purpose: Deploy an Azure OpenAI account
 // -----------------------------------------------------------------------------
 
 @description('Name of the Azure OpenAI account. Must be globally unique.')
