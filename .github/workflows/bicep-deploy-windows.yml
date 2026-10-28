@@ -21,6 +21,7 @@ jobs:
 
     env:
       VM_ADMIN_PASSWORD: ${{ secrets.VM_ADMIN_PASSWORD }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -53,6 +54,10 @@ jobs:
             if (!(Test-Path $file)) {
               throw "$file was not found in the repository root."
             }
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:VM_ADMIN_PASSWORD)) {
+            throw "GitHub secret VM_ADMIN_PASSWORD is missing."
           }
 
       - name: Create temporary Bicep lint configuration
@@ -108,7 +113,12 @@ jobs:
 
           Set-Content -Path "bicepconfig.json" -Value $config -Encoding utf8
 
-          Write-Host "Temporary Bicep lint configuration created."
+          # Verify the generated JSON syntax.
+          Get-Content "bicepconfig.json" -Raw |
+            ConvertFrom-Json -ErrorAction Stop |
+            Out-Null
+
+          Write-Host "Temporary Bicep lint configuration created and validated."
 
       - name: Build Bicep template
         shell: pwsh
@@ -207,12 +217,10 @@ jobs:
             throw "GitHub secret VM_ADMIN_PASSWORD is missing."
           }
 
-          if (!(Test-Path "main.bicep")) {
-            throw "main.bicep was not found."
-          }
-
-          if (!(Test-Path "main.bicepparam")) {
-            throw "main.bicepparam was not found."
+          foreach ($file in @("main.bicep", "main.bicepparam")) {
+            if (!(Test-Path $file)) {
+              throw "$file was not found."
+            }
           }
 
       - name: Azure Login using OIDC
@@ -221,6 +229,7 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          audience: api://AzureADTokenExchange
 
       - name: Verify Azure subscription
         shell: pwsh
