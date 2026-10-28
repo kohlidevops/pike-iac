@@ -1,5 +1,4 @@
-
- // pike-platform :: root deployment
+// pike-platform :: root deployment
 
 @description('Workload name.')
 param workloadName string = 'sampleapp'
@@ -212,9 +211,11 @@ output storageAccountId string = storage.outputs.storageAccountId
 output storageAccountName string = storage.outputs.storageAccountName
 output keyVaultId string = keyVault.outputs.vaultId
 output keyVaultName string = keyVault.outputs.vaultName
-output sqlServerId string = deploySql ? sql.outputs.serverId : ''
-output sqlServerFqdn string = deploySql ? sql.outputs.serverFqdn : ''
-output sqlDatabaseName string = deploySql ? sql.outputs.databaseName : ''
-output openAiAccountId string = deployOpenAI ? openai.outputs.openAiAccountId : ''
-output openAiEndpoint string = deployOpenAI ? openai.outputs.openAiEndpoint : ''
-output openAiAccountNameOutput string = deployOpenAI ? openai.outputs.openAiAccountName : ''
+
+output sqlServerId string = deploySql ? sql!.outputs.serverId : ''
+output sqlServerFqdn string = deploySql ? sql!.outputs.serverFqdn : ''
+output sqlDatabaseName string = deploySql ? sql!.outputs.databaseName : ''
+
+output openAiAccountId string = deployOpenAI ? openai!.outputs.openAiAccountId : ''
+output openAiEndpoint string = deployOpenAI ? openai!.outputs.openAiEndpoint : ''
+output openAiAccountNameOutput string = deployOpenAI ? openai!.outputs.openAiAccountName : ''

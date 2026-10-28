@@ -14,9 +14,155 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
-    name: Validate and Deploy Bicep
+  lint:
+    name: Lint and Validate Bicep
     runs-on: [self-hosted, X64, Windows]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure and Verify Azure CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $azDir = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin"
+          $az = Join-Path $azDir "az.cmd"
+
+          if (!(Test-Path $az)) {
+            throw "Azure CLI not found at $az"
+          }
+
+          Add-Content -Path $env:GITHUB_PATH -Value $azDir
+
+          & $az version
+          if ($LASTEXITCODE -ne 0) {
+            throw "Azure CLI verification failed."
+          }
+
+      - name: Validate required files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          foreach ($file in @("main.bicep", "main.bicepparam")) {
+            if (!(Test-Path $file)) {
+              throw "$file was not found in the repository root."
+            }
+          }
+
+      - name: Create temporary Bicep lint configuration
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $config = @'
+          {
+            "analyzers": {
+              "core": {
+                "enabled": true,
+                "verbose": true,
+                "rules": {
+                  "adminusername-should-not-be-literal": {
+                    "level": "error"
+                  },
+                  "artifacts-parameters": {
+                    "level": "warning"
+                  },
+                  "no-hardcoded-env-urls": {
+                    "level": "error"
+                  },
+                  "no-interpolation-in-variables": {
+                    "level": "warning"
+                  },
+                  "no-unused-params": {
+                    "level": "error"
+                  },
+                  "no-unused-vars": {
+                    "level": "error"
+                  },
+                  "prefer-interpolation": {
+                    "level": "warning"
+                  },
+                  "prefer-unquoted-property-names": {
+                    "level": "warning"
+                  },
+                  "simplify-interpolation": {
+                    "level": "warning"
+                  },
+                  "use-parent-property": {
+                    "level": "warning"
+                  },
+                  "use-resource-id-functions": {
+                    "level": "warning"
+                  }
+                }
+              }
+            }
+          }
+          '@
+
+          Set-Content -Path "bicepconfig.json" -Value $config -Encoding utf8
+
+          Write-Host "Temporary Bicep lint configuration created."
+
+      - name: Build Bicep template
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
+
+          & $az bicep build --file main.bicep
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bicep build failed."
+          }
+
+      - name: Lint Bicep template
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
+
+          if (!(Test-Path "bicepconfig.json")) {
+            throw "Temporary bicepconfig.json was not created."
+          }
+
+          & $az bicep lint --file main.bicep
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bicep lint failed. Fix the reported errors before deployment."
+          }
+
+      - name: Validate Bicep parameter file
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
+
+          & $az bicep build-params --file main.bicepparam
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bicep parameter-file validation failed."
+          }
+
+      - name: Remove temporary lint configuration
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          if (Test-Path "bicepconfig.json") {
+            Remove-Item "bicepconfig.json" -Force
+            Write-Host "Temporary Bicep lint configuration removed."
+          }
+
+  deploy:
+    name: What-If and Deploy Bicep
+    runs-on: [self-hosted, X64, Windows]
+    needs: lint
+    timeout-minutes: 60
+    environment: dev
 
     env:
       AZURE_LOCATION: centralus
@@ -39,17 +185,14 @@ jobs:
             throw "Azure CLI not found at $az"
           }
 
-          # Add Azure CLI to PATH for subsequent workflow steps and actions.
           Add-Content -Path $env:GITHUB_PATH -Value $azDir
 
-          # Verify Azure CLI using its absolute path.
           & $az version
-
           if ($LASTEXITCODE -ne 0) {
             throw "Azure CLI verification failed."
           }
 
-      - name: Validate required configuration
+      - name: Validate deployment configuration
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -63,23 +206,11 @@ jobs:
           }
 
           if (!(Test-Path "main.bicep")) {
-            throw "main.bicep was not found in the repository root."
+            throw "main.bicep was not found."
           }
 
           if (!(Test-Path "main.bicepparam")) {
-            throw "main.bicepparam was not found in the repository root."
-          }
-
-      - name: Validate Bicep template
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $az = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
-
-          & $az bicep build --file main.bicep
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "Bicep build failed."
+            throw "main.bicepparam was not found."
           }
 
       - name: Azure Login using OIDC
