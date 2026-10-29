@@ -1,0 +1,8 @@
+[
+  {
+    "app_name": "EaaS-dev",
+    "environment": "dev",
+    "sub_id": "a98c3501-7e50-4380-a713-b02e7444f4e5",
+    "param_file": "environments/dev.bicepparam"
+  }
+]
