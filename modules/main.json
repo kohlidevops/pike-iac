@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "13650299983762129108"
+      "templateHash": "6489056608751432804"
     }
   },
   "parameters": {
@@ -1358,6 +1358,129 @@
             "sqlDatabaseNameOut": {
               "type": "string",
               "value": "[parameters('databaseName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "resourceGroupModules"
+      ]
+    },
+    {
+      "copy": {
+        "name": "openAiModules",
+        "count": "[length(parameters('landingZones').openAiServices)]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('openai-{0}', parameters('landingZones').openAiServices[copyIndex()].name)]",
+      "resourceGroup": "[parameters('landingZones').openAiServices[copyIndex()].resourceGroupName]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "accountName": {
+            "value": "[parameters('landingZones').openAiServices[copyIndex()].name]"
+          },
+          "location": {
+            "value": "[parameters('landingZones').openAiServices[copyIndex()].location]"
+          },
+          "skuName": {
+            "value": "[parameters('landingZones').openAiServices[copyIndex()].skuName]"
+          },
+          "customSubDomainName": {
+            "value": "[parameters('landingZones').openAiServices[copyIndex()].customSubDomainName]"
+          },
+          "publicNetworkAccess": {
+            "value": "[parameters('landingZones').openAiServices[copyIndex()].publicNetworkAccess]"
+          },
+          "tags": {
+            "value": "[parameters('landingZones').openAiServices[copyIndex()].tags]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "17083220761256880328"
+            }
+          },
+          "parameters": {
+            "accountName": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure OpenAI account name."
+              }
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            },
+            "skuName": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure OpenAI SKU name."
+              }
+            },
+            "customSubDomainName": {
+              "type": "string",
+              "metadata": {
+                "description": "Custom subdomain name for the Azure OpenAI endpoint."
+              }
+            },
+            "publicNetworkAccess": {
+              "type": "string",
+              "allowedValues": [
+                "Enabled",
+                "Disabled"
+              ],
+              "metadata": {
+                "description": "Public network access setting."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Resource tags."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2023-05-01",
+              "name": "[parameters('accountName')]",
+              "location": "[parameters('location')]",
+              "kind": "OpenAI",
+              "sku": {
+                "name": "[parameters('skuName')]"
+              },
+              "properties": {
+                "customSubDomainName": "[parameters('customSubDomainName')]",
+                "publicNetworkAccess": "[parameters('publicNetworkAccess')]"
+              },
+              "tags": "[parameters('tags')]"
+            }
+          ],
+          "outputs": {
+            "accountId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.CognitiveServices/accounts', parameters('accountName'))]"
+            },
+            "accountName": {
+              "type": "string",
+              "value": "[parameters('accountName')]"
+            },
+            "location": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', parameters('accountName')), '2023-05-01', 'full').location]"
             }
           }
         }

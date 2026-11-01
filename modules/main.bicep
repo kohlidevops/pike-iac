@@ -224,3 +224,22 @@ module sqlModules './database/sql.bicep' = [
     ]
   }
 ]
+
+// 9. Azure OpenAI Services
+module openAiModules './ai/openai.bicep' = [
+  for openAi in landingZones.openAiServices: {
+    name: 'openai-${openAi.name}'
+    scope: resourceGroup(openAi.resourceGroupName)
+    params: {
+      accountName: openAi.name
+      location: openAi.location
+      skuName: openAi.skuName
+      customSubDomainName: openAi.customSubDomainName
+      publicNetworkAccess: openAi.publicNetworkAccess
+      tags: openAi.tags
+    }
+    dependsOn: [
+      resourceGroupModules
+    ]
+  }
+]

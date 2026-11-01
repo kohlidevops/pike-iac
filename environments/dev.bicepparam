@@ -86,7 +86,7 @@ param landingZones = {
       location: 'centralus'
       adminUsername: 'azureadmin'
       vmSize: 'Standard_B2s'
-      useExistingNic: false
+      useExistingNic: true
       tags: {
         Environment: 'dev'
         Workload: 'pikehex-cloud-migration'
@@ -166,6 +166,21 @@ param landingZones = {
       databaseMaxSizeBytes: 2147483648
       publicNetworkAccess: 'Disabled'
       minimumTlsVersion: '1.2'
+      tags: {
+        Environment: 'dev'
+        Workload: 'pikehex-cloud-migration'
+        ManagedBy: 'Bicep'
+      }
+    }
+  ]
+   openAiServices: [
+    {
+      name: 'oai-pikehex-dev-cus-001'
+      resourceGroupName: 'rg-pikehex-dev-centralus-001'
+      location: 'centralus'
+      skuName: 'S0'
+      customSubDomainName: 'oai-pikehex-dev-cus-001'
+      publicNetworkAccess: 'Enabled'
       tags: {
         Environment: 'dev'
         Workload: 'pikehex-cloud-migration'
