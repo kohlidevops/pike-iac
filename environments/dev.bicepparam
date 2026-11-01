@@ -1,15 +1,15 @@
 using '../modules/main.bicep'
 
 param environment = 'dev'
-param location = 'eastus'
+param location = 'centralus'
 param vmAdminPassword = readEnvironmentVariable('VM_ADMIN_PASSWORD')
 param sqlAdminPassword = readEnvironmentVariable('SQL_ADMIN_PASSWORD')
 
 param landingZones = {
   resourceGroups: [
     {
-      rgName: 'rg-pikehex-dev-eastus-001'
-      location: 'eastus'
+      rgName: 'rg-pikehex-dev-centralus-001'
+      location: 'centralus'
       tags: {
         Environment: 'dev'
         Workload: 'pikehex-cloud-migration'
@@ -21,8 +21,8 @@ param landingZones = {
   vnets: [
     {
       name: 'vnet-pikehex-dev-001'
-      resourceGroupName: 'rg-pikehex-dev-eastus-001'
-      location: 'eastus'
+      resourceGroupName: 'rg-pikehex-dev-centralus-001'
+      location: 'centralus'
       addressPrefixes: [
         '10.40.0.0/16'
       ]
@@ -39,7 +39,7 @@ param landingZones = {
     {
       name: 'snet-app-dev-001'
       vnetName: 'vnet-pikehex-dev-001'
-      resourceGroupName: 'rg-pikehex-dev-eastus-001'
+      resourceGroupName: 'rg-pikehex-dev-centralus-001'
       addressPrefix: '10.40.1.0/24'
       networkSecurityGroupName: 'nsg-pikehex-dev-001'
       routeTableName: 'rt-pikehex-dev-001'
@@ -52,8 +52,8 @@ param landingZones = {
   nsgs: [
     {
       name: 'nsg-pikehex-dev-001'
-      resourceGroupName: 'rg-pikehex-dev-eastus-001'
-      location: 'eastus'
+      resourceGroupName: 'rg-pikehex-dev-centralus-001'
+      location: 'centralus'
       tags: {
         Environment: 'dev'
         Workload: 'pikehex-cloud-migration'
@@ -66,8 +66,8 @@ param landingZones = {
   routeTables: [
     {
       name: 'rt-pikehex-dev-001'
-      resourceGroupName: 'rg-pikehex-dev-eastus-001'
-      location: 'eastus'
+      resourceGroupName: 'rg-pikehex-dev-centralus-001'
+      location: 'centralus'
       disableBgpRoutePropagation: false
       routes: []
       tags: {
@@ -82,10 +82,11 @@ param landingZones = {
     {
       name: 'vm-pikehex-dev-001'
       computerName: 'vm-pike-dev-001'
-      resourceGroupName: 'rg-pikehex-dev-eastus-001'
-      location: 'eastus'
+      resourceGroupName: 'rg-pikehex-dev-centralus-001'
+      location: 'centralus'
       adminUsername: 'azureadmin'
       vmSize: 'Standard_B2s'
+      useExistingNic: false
       tags: {
         Environment: 'dev'
         Workload: 'pikehex-cloud-migration'
@@ -108,9 +109,9 @@ param landingZones = {
 
   keyVaults: [
     {
-      name: 'kv-pikehex-dev-001'
-      resourceGroupName: 'rg-pikehex-dev-eastus-001'
-      location: 'eastus'
+      name: 'kv-pikehex-dev-cus-001'
+      resourceGroupName: 'rg-pikehex-dev-centralus-001'
+      location: 'centralus'
       skuName: 'standard'
       skuFamily: 'A'
       enableRbacAuthorization: true
@@ -127,9 +128,9 @@ param landingZones = {
 
   storageAccounts: [
     {
-      name: 'stpikehexdev001'
-      resourceGroupName: 'rg-pikehex-dev-eastus-001'
-      location: 'eastus'
+      name: 'stpikehexdevcus001'
+      resourceGroupName: 'rg-pikehex-dev-centralus-001'
+      location: 'centralus'
       tags: {
         Environment: 'dev'
         Workload: 'pikehex-cloud-migration'
@@ -153,10 +154,10 @@ param landingZones = {
 
   sqlDatabases: [
     {
-      serverName: 'sql-pikehex-dev-001'
+      serverName: 'sql-pikehex-dev-cus-001'
       databaseName: 'sqldb-pikehex-dev-001'
-      resourceGroupName: 'rg-pikehex-dev-eastus-001'
-      location: 'eastus'
+      resourceGroupName: 'rg-pikehex-dev-centralus-001'
+      location: 'centralus'
       administratorLogin: 'pikehexsqladmin'
       sqlServerVersion: '12.0'
       databaseSkuName: 'Basic'

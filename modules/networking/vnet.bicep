@@ -1,3 +1,4 @@
+
 @description('Azure region.')
 param location string
 
@@ -13,6 +14,9 @@ param tags object
 @description('Custom DNS server IP addresses; use an empty array for Azure-provided DNS.')
 param dnsServers array
 
+@description('Complete subnet definitions belonging to this VNet.')
+param subnets array
+
 resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
   name: vnetName
   location: location
@@ -24,6 +28,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
     dhcpOptions: !empty(dnsServers) ? {
       dnsServers: dnsServers
     } : null
+    subnets: subnets
   }
 }
 

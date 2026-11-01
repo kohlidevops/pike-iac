@@ -1,3 +1,4 @@
+
 @description('Storage account name; globally unique, lowercase, 3-24 characters.')
 param storageAccountName string
 
@@ -70,6 +71,12 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
 resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
   parent: storageAccount
   name: blobServiceName
+  properties: {
+    deleteRetentionPolicy: {
+      enabled: false
+      allowPermanentDelete: false
+    }
+  }
 }
 
 resource containers 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = [
@@ -78,6 +85,8 @@ resource containers 'Microsoft.Storage/storageAccounts/blobServices/containers@2
     name: containerName
     properties: {
       publicAccess: containerPublicAccess
+      defaultEncryptionScope: '$account-encryption-key'
+      denyEncryptionScopeOverride: false
     }
   }
 ]

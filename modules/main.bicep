@@ -1,3 +1,4 @@
+
 targetScope = 'subscription'
 
 @description('Deployment environment.')
@@ -23,7 +24,7 @@ param vmAdminPassword string
 @description('SQL Server administrator password.')
 param sqlAdminPassword string
 
-// Resource groups are declared in the parameter file and created first.
+// Resource groups.
 module resourceGroupModules './resourcegroup.bicep' = [
   for rg in landingZones.resourceGroups: {
     name: 'rg-${rg.rgName}'
@@ -71,13 +72,15 @@ module routeTableModules './networking/routetable.bicep' = [
   }
 ]
 
-// Virtual networks are separate from subnet resources.
+// Virtual networks with their complete subnet collections.
 module vnetModules './networking/vnet.bicep' = [
   for vnet in landingZones.vnets: {
     name: 'vnet-${vnet.name}'
     scope: resourceGroup(vnet.resourceGroupName)
     dependsOn: [
       resourceGroupModules
+      nsgModules
+      routeTableModules
     ]
     params: {
       location: vnet.location
@@ -85,30 +88,38 @@ module vnetModules './networking/vnet.bicep' = [
       addressPrefixes: vnet.addressPrefixes
       tags: vnet.tags
       dnsServers: vnet.dnsServers
-    }
-  }
-]
 
-// Subnets are individually reusable modules and can be scaled by adding array entries.
-module subnetModules './networking/subnet.bicep' = [
-  for subnet in landingZones.subnets: {
-    name: 'subnet-${subnet.vnetName}-${subnet.name}'
-    scope: resourceGroup(subnet.resourceGroupName)
-    dependsOn: [
-      resourceGroupModules
-      vnetModules
-      nsgModules
-      routeTableModules
-    ]
-    params: {
-      vnetName: subnet.vnetName
-      subnetName: subnet.name
-      addressPrefix: subnet.addressPrefix
-      networkSecurityGroupName: subnet.networkSecurityGroupName
-      routeTableName: subnet.routeTableName
-      serviceEndpoints: subnet.serviceEndpoints
-      privateEndpointNetworkPolicies: subnet.privateEndpointNetworkPolicies
-      privateLinkServiceNetworkPolicies: subnet.privateLinkServiceNetworkPolicies
+      subnets: map(
+        filter(
+          landingZones.subnets,
+          subnet => subnet.vnetName == vnet.name
+        ),
+        subnet => {
+          name: subnet.name
+          properties: {
+            addressPrefix: subnet.addressPrefix
+            serviceEndpoints: subnet.serviceEndpoints
+            privateEndpointNetworkPolicies: subnet.privateEndpointNetworkPolicies
+            privateLinkServiceNetworkPolicies: subnet.privateLinkServiceNetworkPolicies
+
+            networkSecurityGroup: !empty(subnet.networkSecurityGroupName) ? {
+              id: resourceId(
+                vnet.resourceGroupName,
+                'Microsoft.Network/networkSecurityGroups',
+                subnet.networkSecurityGroupName
+              )
+            } : null
+
+            routeTable: !empty(subnet.routeTableName) ? {
+              id: resourceId(
+                vnet.resourceGroupName,
+                'Microsoft.Network/routeTables',
+                subnet.routeTableName
+              )
+            } : null
+          }
+        }
+      )
     }
   }
 ]
@@ -170,7 +181,7 @@ module windowsVmModules './compute/vm.bicep' = [
     scope: resourceGroup(vm.resourceGroupName)
     dependsOn: [
       resourceGroupModules
-      subnetModules
+      vnetModules
     ]
     params: {
       location: vm.location
@@ -183,6 +194,7 @@ module windowsVmModules './compute/vm.bicep' = [
       vnetName: vm.vnetName
       subnetName: vm.subnetName
       nicName: vm.nicName
+      useExistingNic: vm.?useExistingNic ?? false
       privateIpAllocationMethod: vm.privateIpAllocationMethod
       imagePublisher: vm.imagePublisher
       imageOffer: vm.imageOffer
@@ -196,8 +208,7 @@ module windowsVmModules './compute/vm.bicep' = [
   }
 ]
 
-/*
-// Azure SQL Server and database.
+// Azure SQL Server and databases.
 module sqlModules './database/sql.bicep' = [
   for sql in landingZones.sqlDatabases: {
     name: 'sql-${sql.serverName}'
@@ -222,4 +233,3 @@ module sqlModules './database/sql.bicep' = [
     }
   }
 ]
-*/

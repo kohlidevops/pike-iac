@@ -1,3 +1,4 @@
+
 @description('Azure region.')
 param location string
 
@@ -28,6 +29,9 @@ param subnetName string
 
 @description('Network interface name.')
 param nicName string
+
+@description('Whether to use an already existing NIC.')
+param useExistingNic bool = false
 
 @description('Private IP allocation method.')
 @allowed([
@@ -72,7 +76,13 @@ resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-09-01' existing 
   name: subnetName
 }
 
-resource nic 'Microsoft.Network/networkInterfaces@2023-09-01' = {
+// Existing NIC: reference only, do not modify its configuration.
+resource existingNic 'Microsoft.Network/networkInterfaces@2023-09-01' existing = if (useExistingNic) {
+  name: nicName
+}
+
+// New NIC: create only when useExistingNic is false.
+resource newNic 'Microsoft.Network/networkInterfaces@2023-09-01' = if (!useExistingNic) {
   name: nicName
   location: location
   tags: tags
@@ -122,7 +132,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
     networkProfile: {
       networkInterfaces: [
         {
-          id: nic.id
+          id: useExistingNic ? existingNic.id : newNic.id
           properties: {
             primary: true
           }
@@ -139,4 +149,4 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
 
 output vmId string = vm.id
 output vmNameOut string = vm.name
-output networkInterfaceId string = nic.id
+output networkInterfaceId string = useExistingNic ? existingNic.id : newNic.id

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "15935700921948466029"
+      "templateHash": "4662452876825527884"
     }
   },
   "parameters": {
@@ -360,6 +360,9 @@
           },
           "dnsServers": {
             "value": "[parameters('landingZones').vnets[copyIndex()].dnsServers]"
+          },
+          "subnets": {
+            "value": "[map(filter(parameters('landingZones').subnets, lambda('subnet', equals(lambdaVariables('subnet').vnetName, parameters('landingZones').vnets[copyIndex()].name))), lambda('subnet', createObject('name', lambdaVariables('subnet').name, 'properties', createObject('addressPrefix', lambdaVariables('subnet').addressPrefix, 'serviceEndpoints', lambdaVariables('subnet').serviceEndpoints, 'privateEndpointNetworkPolicies', lambdaVariables('subnet').privateEndpointNetworkPolicies, 'privateLinkServiceNetworkPolicies', lambdaVariables('subnet').privateLinkServiceNetworkPolicies, 'networkSecurityGroup', if(not(empty(lambdaVariables('subnet').networkSecurityGroupName)), createObject('id', resourceId(parameters('landingZones').vnets[copyIndex()].resourceGroupName, 'Microsoft.Network/networkSecurityGroups', lambdaVariables('subnet').networkSecurityGroupName)), null()), 'routeTable', if(not(empty(lambdaVariables('subnet').routeTableName)), createObject('id', resourceId(parameters('landingZones').vnets[copyIndex()].resourceGroupName, 'Microsoft.Network/routeTables', lambdaVariables('subnet').routeTableName)), null())))))]"
           }
         },
         "template": {
@@ -369,7 +372,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "901536337240484340"
+              "templateHash": "6249834001027014502"
             }
           },
           "parameters": {
@@ -402,6 +405,12 @@
               "metadata": {
                 "description": "Custom DNS server IP addresses; use an empty array for Azure-provided DNS."
               }
+            },
+            "subnets": {
+              "type": "array",
+              "metadata": {
+                "description": "Complete subnet definitions belonging to this VNet."
+              }
             }
           },
           "resources": [
@@ -415,7 +424,8 @@
                 "addressSpace": {
                   "addressPrefixes": "[parameters('addressPrefixes')]"
                 },
-                "dhcpOptions": "[if(not(empty(parameters('dnsServers'))), createObject('dnsServers', parameters('dnsServers')), null())]"
+                "dhcpOptions": "[if(not(empty(parameters('dnsServers'))), createObject('dnsServers', parameters('dnsServers')), null())]",
+                "subnets": "[parameters('subnets')]"
               }
             }
           ],
@@ -432,151 +442,9 @@
         }
       },
       "dependsOn": [
-        "resourceGroupModules"
-      ]
-    },
-    {
-      "copy": {
-        "name": "subnetModules",
-        "count": "[length(parameters('landingZones').subnets)]"
-      },
-      "type": "Microsoft.Resources/deployments",
-      "apiVersion": "2025-04-01",
-      "name": "[format('subnet-{0}-{1}', parameters('landingZones').subnets[copyIndex()].vnetName, parameters('landingZones').subnets[copyIndex()].name)]",
-      "resourceGroup": "[parameters('landingZones').subnets[copyIndex()].resourceGroupName]",
-      "properties": {
-        "expressionEvaluationOptions": {
-          "scope": "inner"
-        },
-        "mode": "Incremental",
-        "parameters": {
-          "vnetName": {
-            "value": "[parameters('landingZones').subnets[copyIndex()].vnetName]"
-          },
-          "subnetName": {
-            "value": "[parameters('landingZones').subnets[copyIndex()].name]"
-          },
-          "addressPrefix": {
-            "value": "[parameters('landingZones').subnets[copyIndex()].addressPrefix]"
-          },
-          "networkSecurityGroupName": {
-            "value": "[parameters('landingZones').subnets[copyIndex()].networkSecurityGroupName]"
-          },
-          "routeTableName": {
-            "value": "[parameters('landingZones').subnets[copyIndex()].routeTableName]"
-          },
-          "serviceEndpoints": {
-            "value": "[parameters('landingZones').subnets[copyIndex()].serviceEndpoints]"
-          },
-          "privateEndpointNetworkPolicies": {
-            "value": "[parameters('landingZones').subnets[copyIndex()].privateEndpointNetworkPolicies]"
-          },
-          "privateLinkServiceNetworkPolicies": {
-            "value": "[parameters('landingZones').subnets[copyIndex()].privateLinkServiceNetworkPolicies]"
-          }
-        },
-        "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
-          "contentVersion": "1.0.0.0",
-          "metadata": {
-            "_generator": {
-              "name": "bicep",
-              "version": "0.48.1.52935",
-              "templateHash": "9009778015800659981"
-            }
-          },
-          "parameters": {
-            "vnetName": {
-              "type": "string",
-              "metadata": {
-                "description": "Existing virtual network in the current resource group."
-              }
-            },
-            "subnetName": {
-              "type": "string",
-              "metadata": {
-                "description": "Subnet name."
-              }
-            },
-            "addressPrefix": {
-              "type": "string",
-              "metadata": {
-                "description": "Subnet CIDR prefix."
-              }
-            },
-            "networkSecurityGroupName": {
-              "type": "string",
-              "metadata": {
-                "description": "NSG name to associate, or empty string for no NSG."
-              }
-            },
-            "routeTableName": {
-              "type": "string",
-              "metadata": {
-                "description": "Route table name to associate, or empty string for no route table."
-              }
-            },
-            "serviceEndpoints": {
-              "type": "array",
-              "metadata": {
-                "description": "Subnet service endpoints configuration."
-              }
-            },
-            "privateEndpointNetworkPolicies": {
-              "type": "string",
-              "allowedValues": [
-                "Enabled",
-                "Disabled",
-                "NetworkSecurityGroupEnabled",
-                "RouteTableEnabled"
-              ],
-              "metadata": {
-                "description": "Private endpoint network policy setting."
-              }
-            },
-            "privateLinkServiceNetworkPolicies": {
-              "type": "string",
-              "allowedValues": [
-                "Enabled",
-                "Disabled"
-              ],
-              "metadata": {
-                "description": "Private link service network policy setting."
-              }
-            }
-          },
-          "resources": [
-            {
-              "type": "Microsoft.Network/virtualNetworks/subnets",
-              "apiVersion": "2023-09-01",
-              "name": "[format('{0}/{1}', parameters('vnetName'), parameters('subnetName'))]",
-              "properties": {
-                "addressPrefix": "[parameters('addressPrefix')]",
-                "serviceEndpoints": "[parameters('serviceEndpoints')]",
-                "privateEndpointNetworkPolicies": "[parameters('privateEndpointNetworkPolicies')]",
-                "privateLinkServiceNetworkPolicies": "[parameters('privateLinkServiceNetworkPolicies')]",
-                "networkSecurityGroup": "[if(not(empty(parameters('networkSecurityGroupName'))), createObject('id', resourceId('Microsoft.Network/networkSecurityGroups', parameters('networkSecurityGroupName'))), null())]",
-                "routeTable": "[if(not(empty(parameters('routeTableName'))), createObject('id', resourceId('Microsoft.Network/routeTables', parameters('routeTableName'))), null())]"
-              }
-            }
-          ],
-          "outputs": {
-            "subnetId": {
-              "type": "string",
-              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('subnetName'))]"
-            },
-            "subnetNameOut": {
-              "type": "string",
-              "value": "[parameters('subnetName')]"
-            }
-          }
-        }
-      },
-      "dependsOn": [
         "nsgModules",
         "resourceGroupModules",
-        "routeTableModules",
-        "vnetModules"
+        "routeTableModules"
       ]
     },
     {
@@ -644,7 +512,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "10964286426649590448"
+              "templateHash": "131989500362326994"
             }
           },
           "parameters": {
@@ -766,6 +634,12 @@
               "type": "Microsoft.Storage/storageAccounts/blobServices",
               "apiVersion": "2023-05-01",
               "name": "[format('{0}/{1}', parameters('storageAccountName'), parameters('blobServiceName'))]",
+              "properties": {
+                "deleteRetentionPolicy": {
+                  "enabled": false,
+                  "allowPermanentDelete": false
+                }
+              },
               "dependsOn": [
                 "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
               ]
@@ -779,7 +653,9 @@
               "apiVersion": "2023-05-01",
               "name": "[format('{0}/{1}/{2}', parameters('storageAccountName'), parameters('blobServiceName'), parameters('containerNames')[copyIndex()])]",
               "properties": {
-                "publicAccess": "[parameters('containerPublicAccess')]"
+                "publicAccess": "[parameters('containerPublicAccess')]",
+                "defaultEncryptionScope": "$account-encryption-key",
+                "denyEncryptionScopeOverride": false
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAccountName'), parameters('blobServiceName'))]"
@@ -1018,6 +894,9 @@
           "nicName": {
             "value": "[parameters('landingZones').vms[copyIndex()].nicName]"
           },
+          "useExistingNic": {
+            "value": "[coalesce(tryGet(parameters('landingZones').vms[copyIndex()], 'useExistingNic'), false())]"
+          },
           "privateIpAllocationMethod": {
             "value": "[parameters('landingZones').vms[copyIndex()].privateIpAllocationMethod]"
           },
@@ -1053,7 +932,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.48.1.52935",
-              "templateHash": "11001736153842045733"
+              "templateHash": "12841399618981198070"
             }
           },
           "parameters": {
@@ -1115,6 +994,13 @@
               "type": "string",
               "metadata": {
                 "description": "Network interface name."
+              }
+            },
+            "useExistingNic": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Whether to use an already existing NIC."
               }
             },
             "privateIpAllocationMethod": {
@@ -1181,6 +1067,7 @@
           },
           "resources": [
             {
+              "condition": "[not(parameters('useExistingNic'))]",
               "type": "Microsoft.Network/networkInterfaces",
               "apiVersion": "2023-09-01",
               "name": "[parameters('nicName')]",
@@ -1233,7 +1120,7 @@
                 "networkProfile": {
                   "networkInterfaces": [
                     {
-                      "id": "[resourceId('Microsoft.Network/networkInterfaces', parameters('nicName'))]",
+                      "id": "[if(parameters('useExistingNic'), resourceId('Microsoft.Network/networkInterfaces', parameters('nicName')), resourceId('Microsoft.Network/networkInterfaces', parameters('nicName')))]",
                       "properties": {
                         "primary": true
                       }
@@ -1262,14 +1149,221 @@
             },
             "networkInterfaceId": {
               "type": "string",
-              "value": "[resourceId('Microsoft.Network/networkInterfaces', parameters('nicName'))]"
+              "value": "[if(parameters('useExistingNic'), resourceId('Microsoft.Network/networkInterfaces', parameters('nicName')), resourceId('Microsoft.Network/networkInterfaces', parameters('nicName')))]"
             }
           }
         }
       },
       "dependsOn": [
         "resourceGroupModules",
-        "subnetModules"
+        "vnetModules"
+      ]
+    },
+    {
+      "copy": {
+        "name": "sqlModules",
+        "count": "[length(parameters('landingZones').sqlDatabases)]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('sql-{0}', parameters('landingZones').sqlDatabases[copyIndex()].serverName)]",
+      "resourceGroup": "[parameters('landingZones').sqlDatabases[copyIndex()].resourceGroupName]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].location]"
+          },
+          "serverName": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].serverName]"
+          },
+          "databaseName": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].databaseName]"
+          },
+          "administratorLogin": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].administratorLogin]"
+          },
+          "administratorLoginPassword": {
+            "value": "[parameters('sqlAdminPassword')]"
+          },
+          "sqlServerVersion": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].sqlServerVersion]"
+          },
+          "databaseSkuName": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].databaseSkuName]"
+          },
+          "databaseSkuTier": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].databaseSkuTier]"
+          },
+          "databaseCapacity": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].databaseCapacity]"
+          },
+          "databaseMaxSizeBytes": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].databaseMaxSizeBytes]"
+          },
+          "publicNetworkAccess": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].publicNetworkAccess]"
+          },
+          "minimumTlsVersion": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].minimumTlsVersion]"
+          },
+          "tags": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].tags]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.48.1.52935",
+              "templateHash": "8014734693305729608"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region."
+              }
+            },
+            "serverName": {
+              "type": "string",
+              "metadata": {
+                "description": "Globally unique SQL logical server name."
+              }
+            },
+            "databaseName": {
+              "type": "string",
+              "metadata": {
+                "description": "SQL database name."
+              }
+            },
+            "administratorLogin": {
+              "type": "string",
+              "metadata": {
+                "description": "SQL administrator login."
+              }
+            },
+            "administratorLoginPassword": {
+              "type": "securestring",
+              "metadata": {
+                "description": "SQL administrator password."
+              }
+            },
+            "sqlServerVersion": {
+              "type": "string",
+              "metadata": {
+                "description": "SQL Server version."
+              }
+            },
+            "databaseSkuName": {
+              "type": "string",
+              "metadata": {
+                "description": "Database SKU name."
+              }
+            },
+            "databaseSkuTier": {
+              "type": "string",
+              "metadata": {
+                "description": "Database SKU tier."
+              }
+            },
+            "databaseCapacity": {
+              "type": "int",
+              "metadata": {
+                "description": "Database SKU capacity."
+              }
+            },
+            "databaseMaxSizeBytes": {
+              "type": "int",
+              "metadata": {
+                "description": "Maximum database size in bytes."
+              }
+            },
+            "publicNetworkAccess": {
+              "type": "string",
+              "allowedValues": [
+                "Enabled",
+                "Disabled"
+              ],
+              "metadata": {
+                "description": "Public network access setting."
+              }
+            },
+            "minimumTlsVersion": {
+              "type": "string",
+              "metadata": {
+                "description": "Minimum TLS version."
+              }
+            },
+            "tags": {
+              "type": "object",
+              "metadata": {
+                "description": "Resource tags."
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Sql/servers",
+              "apiVersion": "2021-11-01",
+              "name": "[parameters('serverName')]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "properties": {
+                "administratorLogin": "[parameters('administratorLogin')]",
+                "administratorLoginPassword": "[parameters('administratorLoginPassword')]",
+                "version": "[parameters('sqlServerVersion')]",
+                "publicNetworkAccess": "[parameters('publicNetworkAccess')]",
+                "minimalTlsVersion": "[parameters('minimumTlsVersion')]"
+              }
+            },
+            {
+              "type": "Microsoft.Sql/servers/databases",
+              "apiVersion": "2021-11-01",
+              "name": "[format('{0}/{1}', parameters('serverName'), parameters('databaseName'))]",
+              "location": "[parameters('location')]",
+              "tags": "[parameters('tags')]",
+              "sku": {
+                "name": "[parameters('databaseSkuName')]",
+                "tier": "[parameters('databaseSkuTier')]",
+                "capacity": "[parameters('databaseCapacity')]"
+              },
+              "properties": {
+                "maxSizeBytes": "[parameters('databaseMaxSizeBytes')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', parameters('serverName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "sqlServerId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Sql/servers', parameters('serverName'))]"
+            },
+            "sqlServerNameOut": {
+              "type": "string",
+              "value": "[parameters('serverName')]"
+            },
+            "sqlDatabaseId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Sql/servers/databases', parameters('serverName'), parameters('databaseName'))]"
+            },
+            "sqlDatabaseNameOut": {
+              "type": "string",
+              "value": "[parameters('databaseName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "resourceGroupModules"
       ]
     }
   ]

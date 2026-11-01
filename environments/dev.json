@@ -6,7 +6,7 @@
       "value": "dev"
     },
     "location": {
-      "value": "eastus"
+      "value": "centralus"
     },
     "vmAdminPassword": {
       "value": "Mysupersecret@321"
@@ -18,8 +18,8 @@
       "value": {
         "resourceGroups": [
           {
-            "rgName": "rg-pikehex-dev-eastus-001",
-            "location": "eastus",
+            "rgName": "rg-pikehex-dev-centralus-001",
+            "location": "centralus",
             "tags": {
               "Environment": "dev",
               "Workload": "pikehex-cloud-migration",
@@ -30,8 +30,8 @@
         "vnets": [
           {
             "name": "vnet-pikehex-dev-001",
-            "resourceGroupName": "rg-pikehex-dev-eastus-001",
-            "location": "eastus",
+            "resourceGroupName": "rg-pikehex-dev-centralus-001",
+            "location": "centralus",
             "addressPrefixes": [
               "10.40.0.0/16"
             ],
@@ -47,7 +47,7 @@
           {
             "name": "snet-app-dev-001",
             "vnetName": "vnet-pikehex-dev-001",
-            "resourceGroupName": "rg-pikehex-dev-eastus-001",
+            "resourceGroupName": "rg-pikehex-dev-centralus-001",
             "addressPrefix": "10.40.1.0/24",
             "networkSecurityGroupName": "nsg-pikehex-dev-001",
             "routeTableName": "rt-pikehex-dev-001",
@@ -59,8 +59,8 @@
         "nsgs": [
           {
             "name": "nsg-pikehex-dev-001",
-            "resourceGroupName": "rg-pikehex-dev-eastus-001",
-            "location": "eastus",
+            "resourceGroupName": "rg-pikehex-dev-centralus-001",
+            "location": "centralus",
             "tags": {
               "Environment": "dev",
               "Workload": "pikehex-cloud-migration",
@@ -72,8 +72,8 @@
         "routeTables": [
           {
             "name": "rt-pikehex-dev-001",
-            "resourceGroupName": "rg-pikehex-dev-eastus-001",
-            "location": "eastus",
+            "resourceGroupName": "rg-pikehex-dev-centralus-001",
+            "location": "centralus",
             "disableBgpRoutePropagation": false,
             "routes": [],
             "tags": {
@@ -87,10 +87,11 @@
           {
             "name": "vm-pikehex-dev-001",
             "computerName": "vm-pike-dev-001",
-            "resourceGroupName": "rg-pikehex-dev-eastus-001",
-            "location": "eastus",
+            "resourceGroupName": "rg-pikehex-dev-centralus-001",
+            "location": "centralus",
             "adminUsername": "azureadmin",
             "vmSize": "Standard_B2s",
+            "useExistingNic": false,
             "tags": {
               "Environment": "dev",
               "Workload": "pikehex-cloud-migration",
@@ -112,9 +113,9 @@
         ],
         "keyVaults": [
           {
-            "name": "kv-pikehex-dev-001",
-            "resourceGroupName": "rg-pikehex-dev-eastus-001",
-            "location": "eastus",
+            "name": "kv-pikehex-dev-cus-001",
+            "resourceGroupName": "rg-pikehex-dev-centralus-001",
+            "location": "centralus",
             "skuName": "standard",
             "skuFamily": "A",
             "enableRbacAuthorization": true,
@@ -130,9 +131,9 @@
         ],
         "storageAccounts": [
           {
-            "name": "stpikehexdev001",
-            "resourceGroupName": "rg-pikehex-dev-eastus-001",
-            "location": "eastus",
+            "name": "stpikehexdevcus001",
+            "resourceGroupName": "rg-pikehex-dev-centralus-001",
+            "location": "centralus",
             "tags": {
               "Environment": "dev",
               "Workload": "pikehex-cloud-migration",
@@ -155,10 +156,10 @@
         ],
         "sqlDatabases": [
           {
-            "serverName": "sql-pikehex-dev-001",
+            "serverName": "sql-pikehex-dev-cus-001",
             "databaseName": "sqldb-pikehex-dev-001",
-            "resourceGroupName": "rg-pikehex-dev-eastus-001",
-            "location": "eastus",
+            "resourceGroupName": "rg-pikehex-dev-centralus-001",
+            "location": "centralus",
             "administratorLogin": "pikehexsqladmin",
             "sqlServerVersion": "12.0",
             "databaseSkuName": "Basic",
