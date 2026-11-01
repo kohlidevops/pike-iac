@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.48.1.52935",
-      "templateHash": "4662452876825527884"
+      "templateHash": "13650299983762129108"
     }
   },
   "parameters": {
@@ -24,25 +24,25 @@
     "location": {
       "type": "string",
       "metadata": {
-        "description": "Default Azure region for this environment."
+        "description": "Default Azure region."
       }
     },
     "landingZones": {
       "type": "object",
       "metadata": {
-        "description": "Configuration-driven resource inventory. Add entries to scale deployments."
+        "description": "Landing zone configuration."
       }
     },
     "vmAdminPassword": {
       "type": "securestring",
       "metadata": {
-        "description": "Local administrator password for Windows virtual machines."
+        "description": "Windows VM administrator password."
       }
     },
     "sqlAdminPassword": {
       "type": "securestring",
       "metadata": {
-        "description": "SQL Server administrator password."
+        "description": "SQL administrator password."
       }
     }
   },
@@ -120,11 +120,11 @@
         },
         "mode": "Incremental",
         "parameters": {
-          "location": {
-            "value": "[parameters('landingZones').nsgs[copyIndex()].location]"
-          },
           "nsgName": {
             "value": "[parameters('landingZones').nsgs[copyIndex()].name]"
+          },
+          "location": {
+            "value": "[parameters('landingZones').nsgs[copyIndex()].location]"
           },
           "securityRules": {
             "value": "[parameters('landingZones').nsgs[copyIndex()].securityRules]"
@@ -346,23 +346,23 @@
         },
         "mode": "Incremental",
         "parameters": {
-          "location": {
-            "value": "[parameters('landingZones').vnets[copyIndex()].location]"
-          },
           "vnetName": {
             "value": "[parameters('landingZones').vnets[copyIndex()].name]"
+          },
+          "location": {
+            "value": "[parameters('landingZones').vnets[copyIndex()].location]"
           },
           "addressPrefixes": {
             "value": "[parameters('landingZones').vnets[copyIndex()].addressPrefixes]"
           },
-          "tags": {
-            "value": "[parameters('landingZones').vnets[copyIndex()].tags]"
-          },
           "dnsServers": {
             "value": "[parameters('landingZones').vnets[copyIndex()].dnsServers]"
           },
+          "tags": {
+            "value": "[parameters('landingZones').vnets[copyIndex()].tags]"
+          },
           "subnets": {
-            "value": "[map(filter(parameters('landingZones').subnets, lambda('subnet', equals(lambdaVariables('subnet').vnetName, parameters('landingZones').vnets[copyIndex()].name))), lambda('subnet', createObject('name', lambdaVariables('subnet').name, 'properties', createObject('addressPrefix', lambdaVariables('subnet').addressPrefix, 'serviceEndpoints', lambdaVariables('subnet').serviceEndpoints, 'privateEndpointNetworkPolicies', lambdaVariables('subnet').privateEndpointNetworkPolicies, 'privateLinkServiceNetworkPolicies', lambdaVariables('subnet').privateLinkServiceNetworkPolicies, 'networkSecurityGroup', if(not(empty(lambdaVariables('subnet').networkSecurityGroupName)), createObject('id', resourceId(parameters('landingZones').vnets[copyIndex()].resourceGroupName, 'Microsoft.Network/networkSecurityGroups', lambdaVariables('subnet').networkSecurityGroupName)), null()), 'routeTable', if(not(empty(lambdaVariables('subnet').routeTableName)), createObject('id', resourceId(parameters('landingZones').vnets[copyIndex()].resourceGroupName, 'Microsoft.Network/routeTables', lambdaVariables('subnet').routeTableName)), null())))))]"
+            "value": "[map(filter(parameters('landingZones').subnets, lambda('subnet', equals(lambdaVariables('subnet').vnetName, parameters('landingZones').vnets[copyIndex()].name))), lambda('subnet', createObject('name', lambdaVariables('subnet').name, 'properties', createObject('addressPrefix', lambdaVariables('subnet').addressPrefix, 'serviceEndpoints', lambdaVariables('subnet').serviceEndpoints, 'privateEndpointNetworkPolicies', lambdaVariables('subnet').privateEndpointNetworkPolicies, 'privateLinkServiceNetworkPolicies', lambdaVariables('subnet').privateLinkServiceNetworkPolicies, 'networkSecurityGroup', if(not(empty(lambdaVariables('subnet').networkSecurityGroupName)), createObject('id', format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Network/networkSecurityGroups/{2}', subscription().subscriptionId, parameters('landingZones').vnets[copyIndex()].resourceGroupName, lambdaVariables('subnet').networkSecurityGroupName)), null()), 'routeTable', if(not(empty(lambdaVariables('subnet').routeTableName)), createObject('id', format('/subscriptions/{0}/resourceGroups/{1}/providers/Microsoft.Network/routeTables/{2}', subscription().subscriptionId, parameters('landingZones').vnets[copyIndex()].resourceGroupName, lambdaVariables('subnet').routeTableName)), null())))))]"
           }
         },
         "template": {
@@ -468,9 +468,6 @@
           "location": {
             "value": "[parameters('landingZones').storageAccounts[copyIndex()].location]"
           },
-          "tags": {
-            "value": "[parameters('landingZones').storageAccounts[copyIndex()].tags]"
-          },
           "skuName": {
             "value": "[parameters('landingZones').storageAccounts[copyIndex()].skuName]"
           },
@@ -495,14 +492,17 @@
           "publicNetworkAccess": {
             "value": "[parameters('landingZones').storageAccounts[copyIndex()].publicNetworkAccess]"
           },
-          "containerNames": {
-            "value": "[parameters('landingZones').storageAccounts[copyIndex()].containerNames]"
-          },
           "blobServiceName": {
             "value": "[parameters('landingZones').storageAccounts[copyIndex()].blobServiceName]"
           },
+          "containerNames": {
+            "value": "[parameters('landingZones').storageAccounts[copyIndex()].containerNames]"
+          },
           "containerPublicAccess": {
             "value": "[parameters('landingZones').storageAccounts[copyIndex()].containerPublicAccess]"
+          },
+          "tags": {
+            "value": "[parameters('landingZones').storageAccounts[copyIndex()].tags]"
           }
         },
         "template": {
@@ -704,7 +704,7 @@
             "value": "[parameters('landingZones').keyVaults[copyIndex()].location]"
           },
           "tenantId": {
-            "value": "[subscription().tenantId]"
+            "value": "[tenant().tenantId]"
           },
           "skuName": {
             "value": "[parameters('landingZones').keyVaults[copyIndex()].skuName]"
@@ -864,14 +864,14 @@
         },
         "mode": "Incremental",
         "parameters": {
-          "location": {
-            "value": "[parameters('landingZones').vms[copyIndex()].location]"
-          },
           "vmName": {
             "value": "[parameters('landingZones').vms[copyIndex()].name]"
           },
           "computerName": {
             "value": "[parameters('landingZones').vms[copyIndex()].computerName]"
+          },
+          "location": {
+            "value": "[parameters('landingZones').vms[copyIndex()].location]"
           },
           "adminUsername": {
             "value": "[parameters('landingZones').vms[copyIndex()].adminUsername]"
@@ -881,24 +881,6 @@
           },
           "vmSize": {
             "value": "[parameters('landingZones').vms[copyIndex()].vmSize]"
-          },
-          "tags": {
-            "value": "[parameters('landingZones').vms[copyIndex()].tags]"
-          },
-          "vnetName": {
-            "value": "[parameters('landingZones').vms[copyIndex()].vnetName]"
-          },
-          "subnetName": {
-            "value": "[parameters('landingZones').vms[copyIndex()].subnetName]"
-          },
-          "nicName": {
-            "value": "[parameters('landingZones').vms[copyIndex()].nicName]"
-          },
-          "useExistingNic": {
-            "value": "[coalesce(tryGet(parameters('landingZones').vms[copyIndex()], 'useExistingNic'), false())]"
-          },
-          "privateIpAllocationMethod": {
-            "value": "[parameters('landingZones').vms[copyIndex()].privateIpAllocationMethod]"
           },
           "imagePublisher": {
             "value": "[parameters('landingZones').vms[copyIndex()].imagePublisher]"
@@ -912,17 +894,35 @@
           "imageVersion": {
             "value": "[parameters('landingZones').vms[copyIndex()].imageVersion]"
           },
-          "osDiskStorageAccountType": {
-            "value": "[parameters('landingZones').vms[copyIndex()].osDiskStorageAccountType]"
-          },
           "osDiskCreateOption": {
             "value": "[parameters('landingZones').vms[copyIndex()].osDiskCreateOption]"
           },
           "osDiskSizeGB": {
             "value": "[parameters('landingZones').vms[copyIndex()].osDiskSizeGB]"
           },
+          "osDiskStorageAccountType": {
+            "value": "[parameters('landingZones').vms[copyIndex()].osDiskStorageAccountType]"
+          },
           "enableBootDiagnostics": {
             "value": "[parameters('landingZones').vms[copyIndex()].enableBootDiagnostics]"
+          },
+          "nicName": {
+            "value": "[parameters('landingZones').vms[copyIndex()].nicName]"
+          },
+          "useExistingNic": {
+            "value": "[coalesce(tryGet(parameters('landingZones').vms[copyIndex()], 'useExistingNic'), false())]"
+          },
+          "vnetName": {
+            "value": "[parameters('landingZones').vms[copyIndex()].vnetName]"
+          },
+          "subnetName": {
+            "value": "[parameters('landingZones').vms[copyIndex()].subnetName]"
+          },
+          "privateIpAllocationMethod": {
+            "value": "[parameters('landingZones').vms[copyIndex()].privateIpAllocationMethod]"
+          },
+          "tags": {
+            "value": "[parameters('landingZones').vms[copyIndex()].tags]"
           }
         },
         "template": {
@@ -1174,14 +1174,11 @@
         },
         "mode": "Incremental",
         "parameters": {
-          "location": {
-            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].location]"
-          },
           "serverName": {
             "value": "[parameters('landingZones').sqlDatabases[copyIndex()].serverName]"
           },
-          "databaseName": {
-            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].databaseName]"
+          "location": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].location]"
           },
           "administratorLogin": {
             "value": "[parameters('landingZones').sqlDatabases[copyIndex()].administratorLogin]"
@@ -1191,6 +1188,9 @@
           },
           "sqlServerVersion": {
             "value": "[parameters('landingZones').sqlDatabases[copyIndex()].sqlServerVersion]"
+          },
+          "databaseName": {
+            "value": "[parameters('landingZones').sqlDatabases[copyIndex()].databaseName]"
           },
           "databaseSkuName": {
             "value": "[parameters('landingZones').sqlDatabases[copyIndex()].databaseSkuName]"

@@ -10,25 +10,24 @@ targetScope = 'subscription'
 ])
 param environment string
 
-@description('Default Azure region for this environment.')
+@description('Default Azure region.')
 param location string
 
-@description('Configuration-driven resource inventory. Add entries to scale deployments.')
+@description('Landing zone configuration.')
 param landingZones object
 
 @secure()
-@description('Local administrator password for Windows virtual machines.')
+@description('Windows VM administrator password.')
 param vmAdminPassword string
 
 @secure()
-@description('SQL Server administrator password.')
+@description('SQL administrator password.')
 param sqlAdminPassword string
 
-// Resource groups.
+// 1. Resource Groups
 module resourceGroupModules './resourcegroup.bicep' = [
   for rg in landingZones.resourceGroups: {
     name: 'rg-${rg.rgName}'
-    scope: subscription()
     params: {
       rgname: rg.rgName
       location: rg.location
@@ -37,57 +36,52 @@ module resourceGroupModules './resourcegroup.bicep' = [
   }
 ]
 
-// Network security groups.
+// 2. Network Security Groups
 module nsgModules './networking/nsg.bicep' = [
   for nsg in landingZones.nsgs: {
     name: 'nsg-${nsg.name}'
     scope: resourceGroup(nsg.resourceGroupName)
-    dependsOn: [
-      resourceGroupModules
-    ]
     params: {
-      location: nsg.location
       nsgName: nsg.name
+      location: nsg.location
       securityRules: nsg.securityRules
       tags: nsg.tags
     }
-  }
-]
-
-// Route tables.
-module routeTableModules './networking/routetable.bicep' = [
-  for routeTable in landingZones.routeTables: {
-    name: 'rt-${routeTable.name}'
-    scope: resourceGroup(routeTable.resourceGroupName)
     dependsOn: [
       resourceGroupModules
     ]
-    params: {
-      routeTableName: routeTable.name
-      location: routeTable.location
-      disableBgpRoutePropagation: routeTable.disableBgpRoutePropagation
-      routes: routeTable.routes
-      tags: routeTable.tags
-    }
   }
 ]
 
-// Virtual networks with their complete subnet collections.
+// 3. Route Tables
+module routeTableModules './networking/routetable.bicep' = [
+  for rt in landingZones.routeTables: {
+    name: 'rt-${rt.name}'
+    scope: resourceGroup(rt.resourceGroupName)
+    params: {
+      routeTableName: rt.name
+      location: rt.location
+      disableBgpRoutePropagation: rt.disableBgpRoutePropagation
+      routes: rt.routes
+      tags: rt.tags
+    }
+    dependsOn: [
+      resourceGroupModules
+    ]
+  }
+]
+
+// 4. Virtual Networks and complete subnet configuration
 module vnetModules './networking/vnet.bicep' = [
   for vnet in landingZones.vnets: {
     name: 'vnet-${vnet.name}'
     scope: resourceGroup(vnet.resourceGroupName)
-    dependsOn: [
-      resourceGroupModules
-      nsgModules
-      routeTableModules
-    ]
     params: {
-      location: vnet.location
       vnetName: vnet.name
+      location: vnet.location
       addressPrefixes: vnet.addressPrefixes
-      tags: vnet.tags
       dnsServers: vnet.dnsServers
+      tags: vnet.tags
 
       subnets: map(
         filter(
@@ -103,39 +97,32 @@ module vnetModules './networking/vnet.bicep' = [
             privateLinkServiceNetworkPolicies: subnet.privateLinkServiceNetworkPolicies
 
             networkSecurityGroup: !empty(subnet.networkSecurityGroupName) ? {
-              id: resourceId(
-                vnet.resourceGroupName,
-                'Microsoft.Network/networkSecurityGroups',
-                subnet.networkSecurityGroupName
-              )
+              id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${vnet.resourceGroupName}/providers/Microsoft.Network/networkSecurityGroups/${subnet.networkSecurityGroupName}'
             } : null
 
             routeTable: !empty(subnet.routeTableName) ? {
-              id: resourceId(
-                vnet.resourceGroupName,
-                'Microsoft.Network/routeTables',
-                subnet.routeTableName
-              )
+              id: '/subscriptions/${subscription().subscriptionId}/resourceGroups/${vnet.resourceGroupName}/providers/Microsoft.Network/routeTables/${subnet.routeTableName}'
             } : null
           }
         }
       )
     }
+    dependsOn: [
+      resourceGroupModules
+      nsgModules
+      routeTableModules
+    ]
   }
 ]
 
-// Storage accounts.
+// 5. Storage Accounts
 module storageAccountModules './storage/storageAccount.bicep' = [
   for storage in landingZones.storageAccounts: {
     name: 'storage-${storage.name}'
     scope: resourceGroup(storage.resourceGroupName)
-    dependsOn: [
-      resourceGroupModules
-    ]
     params: {
       storageAccountName: storage.name
       location: storage.location
-      tags: storage.tags
       skuName: storage.skuName
       kind: storage.kind
       accessTier: storage.accessTier
@@ -144,85 +131,86 @@ module storageAccountModules './storage/storageAccount.bicep' = [
       allowBlobPublicAccess: storage.allowBlobPublicAccess
       allowSharedKeyAccess: storage.allowSharedKeyAccess
       publicNetworkAccess: storage.publicNetworkAccess
-      containerNames: storage.containerNames
       blobServiceName: storage.blobServiceName
+      containerNames: storage.containerNames
       containerPublicAccess: storage.containerPublicAccess
+      tags: storage.tags
     }
-  }
-]
-
-// Key Vaults.
-module keyVaultModules './security/keyvault.bicep' = [
-  for keyVault in landingZones.keyVaults: {
-    name: 'keyvault-${keyVault.name}'
-    scope: resourceGroup(keyVault.resourceGroupName)
     dependsOn: [
       resourceGroupModules
     ]
-    params: {
-      keyVaultName: keyVault.name
-      location: keyVault.location
-      tenantId: subscription().tenantId
-      skuName: keyVault.skuName
-      skuFamily: keyVault.skuFamily
-      enableRbacAuthorization: keyVault.enableRbacAuthorization
-      enablePurgeProtection: keyVault.enablePurgeProtection
-      softDeleteRetentionInDays: keyVault.softDeleteRetentionInDays
-      publicNetworkAccess: keyVault.publicNetworkAccess
-      tags: keyVault.tags
-    }
   }
 ]
 
-// Windows virtual machines.
+// 6. Key Vaults
+module keyVaultModules './security/keyvault.bicep' = [
+  for kv in landingZones.keyVaults: {
+    name: 'keyvault-${kv.name}'
+    scope: resourceGroup(kv.resourceGroupName)
+    params: {
+      keyVaultName: kv.name
+      location: kv.location
+      tenantId: tenant().tenantId
+      skuName: kv.skuName
+      skuFamily: kv.skuFamily
+      enableRbacAuthorization: kv.enableRbacAuthorization
+      enablePurgeProtection: kv.enablePurgeProtection
+      softDeleteRetentionInDays: kv.softDeleteRetentionInDays
+      publicNetworkAccess: kv.publicNetworkAccess
+      tags: kv.tags
+    }
+    dependsOn: [
+      resourceGroupModules
+    ]
+  }
+]
+
+// 7. Windows Virtual Machines
 module windowsVmModules './compute/vm.bicep' = [
   for vm in landingZones.vms: {
     name: 'vm-${vm.name}'
     scope: resourceGroup(vm.resourceGroupName)
-    dependsOn: [
-      resourceGroupModules
-      vnetModules
-    ]
     params: {
-      location: vm.location
       vmName: vm.name
       computerName: vm.computerName
+      location: vm.location
       adminUsername: vm.adminUsername
       vmAdminPassword: vmAdminPassword
       vmSize: vm.vmSize
-      tags: vm.tags
-      vnetName: vm.vnetName
-      subnetName: vm.subnetName
-      nicName: vm.nicName
-      useExistingNic: vm.?useExistingNic ?? false
-      privateIpAllocationMethod: vm.privateIpAllocationMethod
       imagePublisher: vm.imagePublisher
       imageOffer: vm.imageOffer
       imageSku: vm.imageSku
       imageVersion: vm.imageVersion
-      osDiskStorageAccountType: vm.osDiskStorageAccountType
       osDiskCreateOption: vm.osDiskCreateOption
       osDiskSizeGB: vm.osDiskSizeGB
+      osDiskStorageAccountType: vm.osDiskStorageAccountType
       enableBootDiagnostics: vm.enableBootDiagnostics
+      nicName: vm.nicName
+      useExistingNic: vm.?useExistingNic ?? false
+      vnetName: vm.vnetName
+      subnetName: vm.subnetName
+      privateIpAllocationMethod: vm.privateIpAllocationMethod
+      tags: vm.tags
     }
+    dependsOn: [
+      resourceGroupModules
+      vnetModules
+    ]
   }
 ]
 
-// Azure SQL Server and databases.
+// 8. SQL Servers and Databases
 module sqlModules './database/sql.bicep' = [
   for sql in landingZones.sqlDatabases: {
     name: 'sql-${sql.serverName}'
     scope: resourceGroup(sql.resourceGroupName)
-    dependsOn: [
-      resourceGroupModules
-    ]
     params: {
-      location: sql.location
       serverName: sql.serverName
-      databaseName: sql.databaseName
+      location: sql.location
       administratorLogin: sql.administratorLogin
       administratorLoginPassword: sqlAdminPassword
       sqlServerVersion: sql.sqlServerVersion
+      databaseName: sql.databaseName
       databaseSkuName: sql.databaseSkuName
       databaseSkuTier: sql.databaseSkuTier
       databaseCapacity: sql.databaseCapacity
@@ -231,5 +219,8 @@ module sqlModules './database/sql.bicep' = [
       minimumTlsVersion: sql.minimumTlsVersion
       tags: sql.tags
     }
+    dependsOn: [
+      resourceGroupModules
+    ]
   }
 ]
