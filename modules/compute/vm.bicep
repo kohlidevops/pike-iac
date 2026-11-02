@@ -30,9 +30,6 @@ param subnetName string
 @description('Network interface name.')
 param nicName string
 
-@description('Whether to use an already existing NIC.')
-param useExistingNic bool = false
-
 @description('Private IP allocation method.')
 @allowed([
   'Dynamic'
@@ -67,6 +64,7 @@ param osDiskSizeGB int
 @description('Enable boot diagnostics.')
 param enableBootDiagnostics bool
 
+// Existing VNet and subnet created by the networking module.
 resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' existing = {
   name: vnetName
 }
@@ -76,13 +74,9 @@ resource subnet 'Microsoft.Network/virtualNetworks/subnets@2023-09-01' existing 
   name: subnetName
 }
 
-// Existing NIC: reference only, do not modify its configuration.
-resource existingNic 'Microsoft.Network/networkInterfaces@2023-09-01' existing = if (useExistingNic) {
-  name: nicName
-}
-
-// New NIC: create only when useExistingNic is false.
-resource newNic 'Microsoft.Network/networkInterfaces@2023-09-01' = if (!useExistingNic) {
+// Always manage the NIC through Bicep.
+// Azure creates it when missing and reconciles it when already present.
+resource nic 'Microsoft.Network/networkInterfaces@2023-09-01' = {
   name: nicName
   location: location
   tags: tags
@@ -101,6 +95,7 @@ resource newNic 'Microsoft.Network/networkInterfaces@2023-09-01' = if (!useExist
   }
 }
 
+// Windows Virtual Machine.
 resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
   name: vmName
   location: location
@@ -132,7 +127,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
     networkProfile: {
       networkInterfaces: [
         {
-          id: useExistingNic ? existingNic.id : newNic.id
+          id: nic.id
           properties: {
             primary: true
           }
@@ -149,4 +144,4 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
 
 output vmId string = vm.id
 output vmNameOut string = vm.name
-output networkInterfaceId string = useExistingNic ? existingNic.id : newNic.id
+output networkInterfaceId string = nic.id

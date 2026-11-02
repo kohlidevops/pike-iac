@@ -186,7 +186,6 @@ module windowsVmModules './compute/vm.bicep' = [
       osDiskStorageAccountType: vm.osDiskStorageAccountType
       enableBootDiagnostics: vm.enableBootDiagnostics
       nicName: vm.nicName
-      useExistingNic: vm.?useExistingNic ?? false
       vnetName: vm.vnetName
       subnetName: vm.subnetName
       privateIpAllocationMethod: vm.privateIpAllocationMethod
@@ -225,6 +224,7 @@ module sqlModules './database/sql.bicep' = [
   }
 ]
 
+/*
 // 9. Azure OpenAI Services
 module openAiModules './ai/openai.bicep' = [
   for openAi in landingZones.openAiServices: {
@@ -243,3 +243,4 @@ module openAiModules './ai/openai.bicep' = [
     ]
   }
 ]
+*/
