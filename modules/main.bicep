@@ -224,7 +224,6 @@ module sqlModules './database/sql.bicep' = [
   }
 ]
 
-/*
 // 9. Azure OpenAI Services
 module openAiModules './ai/openai.bicep' = [
   for openAi in landingZones.openAiServices: {
@@ -243,4 +242,3 @@ module openAiModules './ai/openai.bicep' = [
     ]
   }
 ]
-*/
