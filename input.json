@@ -58,7 +58,7 @@
         "vnetName": "vnet-pikehex-dev-001",
         "resourceGroupName": "rg-pikehex-dev-centralus-001",
         "addressPrefix": "10.40.1.0/24",
-        "networkSecurityGroupName": "nsg-pikehex-dev-001",
+        "networkSecurityGroupName": "",
         "routeTableName": "rt-pikehex-dev-001",
         "serviceEndpoints": [],
         "privateEndpointNetworkPolicies": "Enabled",
