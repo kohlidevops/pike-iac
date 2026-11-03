@@ -1,0 +1,140 @@
+
+{
+  "request": {
+    "ticketId": "PIKE-12345",
+    "requestedBy": "your.email@company.com",
+    "approved": true,
+    "environment": "dev",
+    "deploymentMethod": "Bicep",
+    "project": "PIKE-IAC"
+  },
+  "subscription": {
+    "name": "PIKE-SUBSCRIPTION",
+    "subscriptionId": "${AZURE_SUBSCRIPTION_ID}"
+  },
+  "deployment": {
+    "location": "centralus"
+  },
+  "deploymentPlan": {
+    "resourceGroups": "create",
+    "vnets": "create",
+    "subnets": "create",
+    "routeTables": "create",
+    "keyVaults": "create",
+    "sqlDatabases": "create",
+    "openAiServices": "create"
+  },
+  "landingZones": {
+    "resourceGroups": [
+      {
+        "rgName": "rg-pikehex-dev-centralus-001",
+        "location": "centralus",
+        "tags": {
+          "Environment": "dev",
+          "Workload": "pikehex-cloud-migration",
+          "ManagedBy": "Bicep"
+        }
+      }
+    ],
+    "vnets": [
+      {
+        "name": "vnet-pikehex-dev-001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "location": "centralus",
+        "addressPrefixes": [
+          "10.40.0.0/16"
+        ],
+        "dnsServers": [],
+        "tags": {
+          "Environment": "dev",
+          "Workload": "pikehex-cloud-migration",
+          "ManagedBy": "Bicep"
+        }
+      }
+    ],
+    "subnets": [
+      {
+        "name": "snet-app-dev-001",
+        "vnetName": "vnet-pikehex-dev-001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "addressPrefix": "10.40.1.0/24",
+        "networkSecurityGroupName": "nsg-pikehex-dev-001",
+        "routeTableName": "rt-pikehex-dev-001",
+        "serviceEndpoints": [],
+        "privateEndpointNetworkPolicies": "Enabled",
+        "privateLinkServiceNetworkPolicies": "Enabled"
+      }
+    ],
+    "nsgs": [],
+    "routeTables": [
+      {
+        "name": "rt-pikehex-dev-001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "location": "centralus",
+        "disableBgpRoutePropagation": false,
+        "routes": [],
+        "tags": {
+          "Environment": "dev",
+          "Workload": "pikehex-cloud-migration",
+          "ManagedBy": "Bicep"
+        }
+      }
+    ],
+    "vms": [],
+    "keyVaults": [
+      {
+        "name": "kv-pikehex-dev-cus-001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "location": "centralus",
+        "skuName": "standard",
+        "skuFamily": "A",
+        "enableRbacAuthorization": true,
+        "enablePurgeProtection": true,
+        "softDeleteRetentionInDays": 7,
+        "publicNetworkAccess": "Enabled",
+        "tags": {
+          "Environment": "dev",
+          "Workload": "pikehex-cloud-migration",
+          "ManagedBy": "Bicep"
+        }
+      }
+    ],
+    "storageAccounts": [],
+    "sqlDatabases": [
+      {
+        "serverName": "sql-pikehex-dev-cus-001",
+        "databaseName": "sqldb-pikehex-dev-001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "location": "centralus",
+        "administratorLogin": "pikehexsqladmin",
+        "sqlServerVersion": "12.0",
+        "databaseSkuName": "Basic",
+        "databaseSkuTier": "Basic",
+        "databaseCapacity": 5,
+        "databaseMaxSizeBytes": 2147483648,
+        "publicNetworkAccess": "Disabled",
+        "minimumTlsVersion": "1.2",
+        "tags": {
+          "Environment": "dev",
+          "Workload": "pikehex-cloud-migration",
+          "ManagedBy": "Bicep"
+        }
+      }
+    ],
+    "openAiServices": [
+      {
+        "name": "oai-pikehex-dev-cus-001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "location": "centralus",
+        "skuName": "S0",
+        "customSubDomainName": "oai-pikehex-dev-cus-001",
+        "publicNetworkAccess": "Enabled",
+        "tags": {
+          "Environment": "dev",
+          "Workload": "pikehex-cloud-migration",
+          "ManagedBy": "Bicep"
+        }
+      }
+    ]
+  }
+}
