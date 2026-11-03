@@ -102,7 +102,7 @@
     "storageAccounts": [],
     "sqlDatabases": [
       {
-        "serverName": "sql-pikehex-dev-cus-001",
+        "serverName": "sql-pikehex-dev-cus-20261103-001",
         "databaseName": "sqldb-pikehex-dev-001",
         "resourceGroupName": "rg-pikehex-dev-centralus-001",
         "location": "centralus",
