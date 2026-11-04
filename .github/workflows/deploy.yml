@@ -1,10 +1,10 @@
-name: PIKE-IAC | Infrastructure Deployment
+name: PIKE-IAC | Modular Infrastructure Deployment
 
 on:
   workflow_dispatch:
     inputs:
       deploy_resources:
-        description: 'Deploy resources after What-If preview (false = preview only)'
+        description: 'Deploy after individual module What-If previews (false = preview only)'
         type: boolean
         required: true
         default: false
@@ -14,483 +14,213 @@ permissions:
   contents: read
 
 jobs:
-  deploy:
-    name: Validate, Preview and Deploy Infrastructure
+  modular-deploy:
+    name: Validate, preview and deploy individual Bicep modules
     runs-on: ubuntu-latest
+    env:
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      VM_ADMIN_PASSWORD: ${{ secrets.VM_ADMIN_PASSWORD }}
+      SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
 
     steps:
-      # --------------------------------------------------
-      # 01. CHECKOUT
-      # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # --------------------------------------------------
-      # 02. INSTALL BICEP AND VALIDATE TEMPLATE
-      # --------------------------------------------------
-      - name: Install and build Bicep
+      - name: Install Azure CLI Bicep and validate source files
         shell: bash
         run: |
           set -euo pipefail
-
           az bicep install
-          az bicep version
-
-          echo "Building root Bicep template..."
-
-          az bicep build \
-            --file modules/main.bicep \
-            --stdout > /dev/null
-
-          echo "Bicep build successful."
-
-      # --------------------------------------------------
-      # 03. VALIDATE INPUT JSON AND GITHUB SECRETS
-      # --------------------------------------------------
-      - name: Validate input.json
-        shell: bash
-        env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          VM_ADMIN_PASSWORD: ${{ secrets.VM_ADMIN_PASSWORD }}
-          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
-
-        run: |
-          set -euo pipefail
-
+          for file in \
+            modules/resourcegroup.bicep \
+            modules/networking/nsg.bicep \
+            modules/networking/routetable.bicep \
+            modules/networking/vnet.bicep \
+            modules/networking/subnet.bicep \
+            modules/security/keyvault.bicep \
+            modules/storage/storageAccount.bicep \
+            modules/database/sql.bicep \
+            modules/ai/openai.bicep \
+            modules/compute/vm.bicep; do
+            echo "Building $file"
+            az bicep build --file "$file" --stdout >/dev/null
+          done
           jq empty input.json
 
-          python - <<'PY'
-          import json
-          import os
-
-          with open("input.json", encoding="utf-8") as f:
-              config = json.load(f)
-
-          def check(condition, message):
-              if not condition:
-                  raise SystemExit(message)
-
-          # Request validation
-          check(
-              config["request"]["approved"] is True,
-              "Request must be approved."
-          )
-
-          check(
-              config["request"]["environment"] in ["dev", "test", "uat", "prod"],
-              "Invalid deployment environment."
-          )
-
-          check(
-              config["subscription"]["subscriptionId"] == "${AZURE_SUBSCRIPTION_ID}",
-              "Subscription ID must use the AZURE_SUBSCRIPTION_ID placeholder."
-          )
-
-          # GitHub Repository Secrets validation
-          required_secrets = [
-              "AZURE_TENANT_ID",
-              "AZURE_SUBSCRIPTION_ID",
-              "AZURE_CLIENT_ID",
-              "VM_ADMIN_PASSWORD",
-              "SQL_ADMIN_PASSWORD"
-          ]
-
-          for secret in required_secrets:
-              check(
-                  bool(os.getenv(secret)),
-                  f"Missing GitHub Repository Secret: {secret}"
-              )
-
-          zones = config["landingZones"]
-
-          # Validate arrays required by main.bicep
-          required_arrays = [
-              "resourceGroups",
-              "nsgs",
-              "routeTables",
-              "vnets",
-              "subnets",
-              "storageAccounts",
-              "keyVaults",
-              "vms",
-              "sqlDatabases",
-              "openAiServices"
-          ]
-
-          for key in required_arrays:
-              check(
-                  isinstance(zones.get(key), list),
-                  f"landingZones.{key} must be an array."
-              )
-
-          check(
-              len(zones["resourceGroups"]) > 0,
-              "At least one Resource Group must be configured."
-          )
-
-          rg_names = [rg["rgName"] for rg in zones["resourceGroups"]]
-
-          check(
-              len(rg_names) == len(set(rg_names)),
-              "Duplicate Resource Group names found."
-          )
-
-          # Validate VNet resource group references
-          for vnet in zones["vnets"]:
-              check(
-                  vnet["resourceGroupName"] in rg_names,
-                  f"Resource Group missing for VNet {vnet['name']}."
-              )
-
-          # Validate subnet associations
-          vnet_names = {vnet["name"] for vnet in zones["vnets"]}
-          nsg_names = {nsg["name"] for nsg in zones["nsgs"]}
-          route_table_names = {rt["name"] for rt in zones["routeTables"]}
-
-          for subnet in zones["subnets"]:
-              check(
-                  subnet["vnetName"] in vnet_names,
-                  f"VNet missing for subnet {subnet['name']}."
-              )
-
-              if subnet.get("networkSecurityGroupName"):
-                  check(
-                      subnet["networkSecurityGroupName"] in nsg_names,
-                      f"NSG missing for subnet {subnet['name']}."
-                  )
-
-              if subnet.get("routeTableName"):
-                  check(
-                      subnet["routeTableName"] in route_table_names,
-                      f"Route Table missing for subnet {subnet['name']}."
-                  )
-
-          # Validate resource group references
-          for category in [
-              "nsgs",
-              "routeTables",
-              "storageAccounts",
-              "keyVaults",
-              "vms",
-              "sqlDatabases",
-              "openAiServices"
-          ]:
-              for resource in zones[category]:
-                  check(
-                      resource["resourceGroupName"] in rg_names,
-                      f"Resource Group missing for {category}: {resource.get('name', resource.get('serverName'))}."
-                  )
-
-          print("input.json validation successful.")
-          print("GitHub Repository Secrets validation successful.")
-          print("Resource configuration validation successful.")
-          PY
-
-      # --------------------------------------------------
-      # 04. GENERATE BICEP PARAMETERS FROM INPUT JSON
-      # --------------------------------------------------
-      - name: Generate deployment parameters
+      - name: Validate configuration and generate module parameters
+        id: cfg
         shell: bash
-        env:
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          VM_ADMIN_PASSWORD: ${{ secrets.VM_ADMIN_PASSWORD }}
-          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
-
         run: |
           set -euo pipefail
-
+          test -n "$AZURE_TENANT_ID" || { echo 'Missing AZURE_TENANT_ID secret'; exit 1; }
+          test -n "$AZURE_SUBSCRIPTION_ID" || { echo 'Missing AZURE_SUBSCRIPTION_ID secret'; exit 1; }
+          test -n "$AZURE_CLIENT_ID" || { echo 'Missing AZURE_CLIENT_ID secret'; exit 1; }
+          test -n "$VM_ADMIN_PASSWORD" || { echo 'Missing VM_ADMIN_PASSWORD secret'; exit 1; }
+          test -n "$SQL_ADMIN_PASSWORD" || { echo 'Missing SQL_ADMIN_PASSWORD secret'; exit 1; }
           umask 077
-
+          mkdir -p .generated-parameters
           python - <<'PY'
-          import json
-          import os
-
-          with open("input.json", encoding="utf-8") as f:
-              config = json.load(f)
-
-          parameters = {
-              "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-              "contentVersion": "1.0.0.0",
-              "parameters": {
-                  "environment": {
-                      "value": config["request"]["environment"]
-                  },
-                  "location": {
-                      "value": config["deployment"]["location"]
-                  },
-                  "landingZones": {
-                      "value": config["landingZones"]
-                  },
-                  "vmAdminPassword": {
-                      "value": os.environ["VM_ADMIN_PASSWORD"]
-                  },
-                  "sqlAdminPassword": {
-                      "value": os.environ["SQL_ADMIN_PASSWORD"]
-                  }
-              }
-          }
-
-          with open("deployment.parameters.json", "w", encoding="utf-8") as f:
-              json.dump(parameters, f, indent=2)
-
-          print("Bicep deployment parameters generated successfully.")
+          import json, os, pathlib
+          c=json.load(open('input.json',encoding='utf-8'))
+          def check(ok,msg):
+              if not ok: raise SystemExit(msg)
+          check(c['request']['approved'] is True,'Request must be approved.')
+          check(c['request']['environment'] in ('dev','test','uat','prod'),'Invalid environment.')
+          check(c['subscription']['subscriptionId']=='${AZURE_SUBSCRIPTION_ID}','subscriptionId must use ${AZURE_SUBSCRIPTION_ID}.')
+          z=c['landingZones']; plan=c['deploymentPlan']; out=pathlib.Path('.generated-parameters')
+          required=('resourceGroups','nsgs','routeTables','vnets','subnets','storageAccounts','keyVaults','vms','sqlDatabases','openAiServices')
+          for k in required: check(isinstance(z.get(k),list),f'landingZones.{k} must be an array')
+          check(len(z['resourceGroups'])==1,'This workflow currently expects exactly one configured resource group.')
+          rg=z['resourceGroups'][0]['rgName']; loc=c['deployment']['location']
+          for k in required:
+              for r in z[k]:
+                  if k!='resourceGroups': check(r.get('resourceGroupName')==rg,f'{k} resource group mismatch: {r}')
+          check(len(z['vms'])<=1,'This workflow currently supports one Windows VM per run.')
+          for vm in z['vms']:
+              check(vm.get('imagePublisher')=='MicrosoftWindowsServer','Only Windows Server VM images are supported.')
+              check(vm.get('vnetName') in [x['name'] for x in z['vnets']],'VM VNet is not configured.')
+              check(vm.get('subnetName') in [x['name'] for x in z['subnets']],'VM subnet is not configured.')
+          for s in z['subnets']:
+              check(s['vnetName'] in [x['name'] for x in z['vnets']],f"VNet missing for subnet {s['name']}")
+              check(not s.get('networkSecurityGroupName') or s['networkSecurityGroupName'] in [x['name'] for x in z['nsgs']],f"NSG missing for subnet {s['name']}")
+              check(not s.get('routeTableName') or s['routeTableName'] in [x['name'] for x in z['routeTables']],f"Route table missing for subnet {s['name']}")
+          check(len(z['sqlDatabases'])<=1,'This workflow currently supports one SQL configuration per run.')
+          for k in required:
+              check(plan.get(k,'skip') in ('create','skip'),f'deploymentPlan.{k} must be create or skip')
+          # ARM deployment-parameter file wrapper.
+          def write(name, params):
+              data={'$schema':'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#','contentVersion':'1.0.0.0','parameters':{k:{'value':v} for k,v in params.items()}}
+              json.dump(data,open(out/f'{name}.json','w',encoding='utf-8'),indent=2)
+          rgc=z['resourceGroups'][0]
+          write('resourcegroup',{'rgname':rgc['rgName'],'location':rgc['location'],'tags':rgc['tags']})
+          for x in z['nsgs']:
+              write('nsg',{'location':x['location'],'nsgName':x['name'],'securityRules':x['securityRules'],'tags':x['tags']})
+          for x in z['routeTables']:
+              write('routetable',{'routeTableName':x['name'],'location':x['location'],'disableBgpRoutePropagation':x['disableBgpRoutePropagation'],'routes':x['routes'],'tags':x['tags']})
+          for x in z['vnets']:
+              vnet_subnets=[]
+              for sn in z['subnets']:
+                  if sn['vnetName'] != x['name']: continue
+                  props={'addressPrefix':sn['addressPrefix'],'serviceEndpoints':sn['serviceEndpoints'],'privateEndpointNetworkPolicies':sn['privateEndpointNetworkPolicies'],'privateLinkServiceNetworkPolicies':sn['privateLinkServiceNetworkPolicies']}
+                  props['networkSecurityGroup']=({'id':f"/subscriptions/{os.environ['AZURE_SUBSCRIPTION_ID']}/resourceGroups/{sn['resourceGroupName']}/providers/Microsoft.Network/networkSecurityGroups/{sn['networkSecurityGroupName']}"} if sn.get('networkSecurityGroupName') else None)
+                  props['routeTable']=({'id':f"/subscriptions/{os.environ['AZURE_SUBSCRIPTION_ID']}/resourceGroups/{sn['resourceGroupName']}/providers/Microsoft.Network/routeTables/{sn['routeTableName']}"} if sn.get('routeTableName') else None)
+                  vnet_subnets.append({'name':sn['name'],'properties':props})
+              write('vnet',{'location':x['location'],'vnetName':x['name'],'addressPrefixes':x['addressPrefixes'],'tags':x['tags'],'dnsServers':x['dnsServers'],'subnets':vnet_subnets})
+          for x in z['subnets']:
+              write('subnet',{'vnetName':x['vnetName'],'subnetName':x['name'],'addressPrefix':x['addressPrefix'],'networkSecurityGroupName':x.get('networkSecurityGroupName',''),'routeTableName':x.get('routeTableName',''),'serviceEndpoints':x['serviceEndpoints'],'privateEndpointNetworkPolicies':x['privateEndpointNetworkPolicies'],'privateLinkServiceNetworkPolicies':x['privateLinkServiceNetworkPolicies']})
+          for x in z['keyVaults']:
+              write('keyvault',{'keyVaultName':x['name'],'location':x['location'],'tenantId':os.environ['AZURE_TENANT_ID'],'skuName':x['skuName'],'skuFamily':x['skuFamily'],'enableRbacAuthorization':x['enableRbacAuthorization'],'enablePurgeProtection':x['enablePurgeProtection'],'softDeleteRetentionInDays':x['softDeleteRetentionInDays'],'publicNetworkAccess':x['publicNetworkAccess'],'tags':x['tags']})
+          for x in z['storageAccounts']:
+              write('storage',{'storageAccountName':x['name'],'location':x['location'],'tags':x['tags'],'skuName':x['skuName'],'kind':x['kind'],'accessTier':x['accessTier'],'minimumTlsVersion':x['minimumTlsVersion'],'supportsHttpsTrafficOnly':x['supportsHttpsTrafficOnly'],'allowBlobPublicAccess':x['allowBlobPublicAccess'],'allowSharedKeyAccess':x['allowSharedKeyAccess'],'publicNetworkAccess':x['publicNetworkAccess'],'containerNames':x['containerNames'],'blobServiceName':x['blobServiceName'],'containerPublicAccess':x['containerPublicAccess']})
+          for x in z['sqlDatabases']:
+              write('sql',{'location':x['location'],'serverName':x['serverName'],'databaseName':x['databaseName'],'administratorLogin':x['administratorLogin'],'administratorLoginPassword':os.environ['SQL_ADMIN_PASSWORD'],'sqlServerVersion':x['sqlServerVersion'],'databaseSkuName':x['databaseSkuName'],'databaseSkuTier':x['databaseSkuTier'],'databaseCapacity':x['databaseCapacity'],'databaseMaxSizeBytes':x['databaseMaxSizeBytes'],'publicNetworkAccess':x['publicNetworkAccess'],'minimumTlsVersion':x['minimumTlsVersion'],'tags':x['tags']})
+          for x in z['openAiServices']:
+              write('openai',{'accountName':x['name'],'location':x['location'],'skuName':x['skuName'],'customSubDomainName':x['customSubDomainName'],'publicNetworkAccess':x['publicNetworkAccess'],'tags':x['tags']})
+          for x in z['vms']:
+              write('vm',{'location':x['location'],'computerName':x['computerName'],'vmName':x['name'],'adminUsername':x['adminUsername'],'vmAdminPassword':os.environ['VM_ADMIN_PASSWORD'],'vmSize':x['vmSize'],'tags':x['tags'],'vnetName':x['vnetName'],'subnetName':x['subnetName'],'nicName':x['nicName'],'privateIpAllocationMethod':x['privateIpAllocationMethod'],'imagePublisher':x['imagePublisher'],'imageOffer':x['imageOffer'],'imageSku':x['imageSku'],'imageVersion':x['imageVersion'],'osDiskStorageAccountType':x['osDiskStorageAccountType'],'osDiskCreateOption':x['osDiskCreateOption'],'osDiskSizeGB':x['osDiskSizeGB'],'enableBootDiagnostics':x['enableBootDiagnostics']})
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              f.write(f"rg_name={rg}\n")
+              f.write(f"location={loc}\n")
+              for k in required: f.write(f"{k}={plan.get(k,'skip')}\n")
+          print('Validated input.json and generated per-module parameter files.')
           PY
 
-          chmod 600 deployment.parameters.json
-
-      # --------------------------------------------------
-      # 05. AZURE LOGIN USING GITHUB OIDC
-      # --------------------------------------------------
-      - name: Login to Azure
+      - name: Azure login using OIDC
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # --------------------------------------------------
-      # 06. VERIFY AZURE SUBSCRIPTION
-      # --------------------------------------------------
-      - name: Verify Azure subscription
+      - name: Resource Group | What-If
+        if: steps.cfg.outputs.resourceGroups == 'create'
+        run: az deployment sub what-if --name "PIKE-RG-WhatIf-${{ github.run_number }}" --location "${{ steps.cfg.outputs.location }}" --template-file modules/resourcegroup.bicep --parameters @.generated-parameters/resourcegroup.json --output table
+
+      - name: Resource Group | Deploy
+        if: inputs.deploy_resources == true && steps.cfg.outputs.resourceGroups == 'create'
+        run: az deployment sub create --name "PIKE-RG-${{ github.run_number }}" --location "${{ steps.cfg.outputs.location }}" --template-file modules/resourcegroup.bicep --parameters @.generated-parameters/resourcegroup.json --mode Incremental --output table
+
+      - name: NSG | What-If
+        if: steps.cfg.outputs.nsgs == 'create'
+        run: az deployment group what-if --name "PIKE-NSG-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/nsg.bicep --parameters @.generated-parameters/nsg.json --output table
+
+      - name: NSG | Deploy
+        if: inputs.deploy_resources == true && steps.cfg.outputs.nsgs == 'create'
+        run: az deployment group create --name "PIKE-NSG-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/nsg.bicep --parameters @.generated-parameters/nsg.json --mode Incremental --output table
+
+      - name: Route Table | What-If
+        if: steps.cfg.outputs.routeTables == 'create'
+        run: az deployment group what-if --name "PIKE-RT-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/routetable.bicep --parameters @.generated-parameters/routetable.json --output table
+
+      - name: Route Table | Deploy
+        if: inputs.deploy_resources == true && steps.cfg.outputs.routeTables == 'create'
+        run: az deployment group create --name "PIKE-RT-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/routetable.bicep --parameters @.generated-parameters/routetable.json --mode Incremental --output table
+
+      - name: VNet | What-If
+        if: steps.cfg.outputs.vnets == 'create'
+        run: az deployment group what-if --name "PIKE-VNET-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/vnet.bicep --parameters @.generated-parameters/vnet.json --output table
+
+      - name: VNet | Deploy
+        if: inputs.deploy_resources == true && steps.cfg.outputs.vnets == 'create'
+        run: az deployment group create --name "PIKE-VNET-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/vnet.bicep --parameters @.generated-parameters/vnet.json --mode Incremental --output table
+
+      - name: Subnet | What-If
+        if: steps.cfg.outputs.subnets == 'create'
+        run: az deployment group what-if --name "PIKE-SUBNET-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/subnet.bicep --parameters @.generated-parameters/subnet.json --output table
+
+      - name: Subnet | Deploy
+        if: inputs.deploy_resources == true && steps.cfg.outputs.subnets == 'create'
+        run: az deployment group create --name "PIKE-SUBNET-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/subnet.bicep --parameters @.generated-parameters/subnet.json --mode Incremental --output table
+
+      - name: Key Vault | What-If
+        if: steps.cfg.outputs.keyVaults == 'create'
+        run: az deployment group what-if --name "PIKE-KV-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/security/keyvault.bicep --parameters @.generated-parameters/keyvault.json --output table
+
+      - name: Key Vault | Deploy
+        if: inputs.deploy_resources == true && steps.cfg.outputs.keyVaults == 'create'
+        run: az deployment group create --name "PIKE-KV-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/security/keyvault.bicep --parameters @.generated-parameters/keyvault.json --mode Incremental --output table
+
+      - name: Storage Account | What-If
+        if: steps.cfg.outputs.storageAccounts == 'create'
+        run: az deployment group what-if --name "PIKE-ST-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/storage/storageAccount.bicep --parameters @.generated-parameters/storage.json --output table
+
+      - name: Storage Account | Deploy
+        if: inputs.deploy_resources == true && steps.cfg.outputs.storageAccounts == 'create'
+        run: az deployment group create --name "PIKE-ST-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/storage/storageAccount.bicep --parameters @.generated-parameters/storage.json --mode Incremental --output table
+
+      - name: SQL | What-If
+        if: steps.cfg.outputs.sqlDatabases == 'create'
+        run: az deployment group what-if --name "PIKE-SQL-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/database/sql.bicep --parameters @.generated-parameters/sql.json --output table
+
+      - name: SQL | Deploy
+        if: inputs.deploy_resources == true && steps.cfg.outputs.sqlDatabases == 'create'
+        run: az deployment group create --name "PIKE-SQL-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/database/sql.bicep --parameters @.generated-parameters/sql.json --mode Incremental --output table
+
+      - name: Azure OpenAI | What-If
+        if: steps.cfg.outputs.openAiServices == 'create'
+        run: az deployment group what-if --name "PIKE-OAI-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/ai/openai.bicep --parameters @.generated-parameters/openai.json --output table
+
+      - name: Azure OpenAI | Deploy
+        if: inputs.deploy_resources == true && steps.cfg.outputs.openAiServices == 'create'
+        run: az deployment group create --name "PIKE-OAI-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/ai/openai.bicep --parameters @.generated-parameters/openai.json --mode Incremental --output table
+
+      - name: Windows VM | What-If
+        if: steps.cfg.outputs.vms == 'create'
+        run: az deployment group what-if --name "PIKE-VM-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/compute/vm.bicep --parameters @.generated-parameters/vm.json --output table
+
+      - name: Windows VM | Deploy
+        if: inputs.deploy_resources == true && steps.cfg.outputs.vms == 'create'
+        run: az deployment group create --name "PIKE-VM-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/compute/vm.bicep --parameters @.generated-parameters/vm.json --mode Incremental --output table
+
+      - name: Verify deployed resources
+        if: inputs.deploy_resources == true
         shell: bash
         run: |
           set -euo pipefail
+          az resource list --resource-group "${{ steps.cfg.outputs.rg_name }}" --query "[].{Name:name,Type:type,Location:location}" --output table
 
-          echo "Connected Azure account:"
-
-          az account show \
-            --query "{name:name,id:id,tenantId:tenantId}" \
-            --output table
-
-      # --------------------------------------------------
-      # 07. SUBSCRIPTION WHAT-IF
-      # --------------------------------------------------
-      - name: Generate subscription What-If preview
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          az deployment sub what-if \
-            --name "PIKE-WhatIf-${GITHUB_RUN_NUMBER}" \
-            --location "$(jq -r '.deployment.location' input.json)" \
-            --template-file modules/main.bicep \
-            --parameters @deployment.parameters.json \
-            --output table
-
-      # --------------------------------------------------
-      # 08. DEPLOY INFRASTRUCTURE
-      # --------------------------------------------------
-      - name: Deploy infrastructure
-        if: ${{ inputs.deploy_resources == true }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Starting PIKE-IAC infrastructure deployment..."
-
-          az deployment sub create \
-            --name "PIKE-Deployment-${GITHUB_RUN_NUMBER}" \
-            --location "$(jq -r '.deployment.location' input.json)" \
-            --template-file modules/main.bicep \
-            --parameters @deployment.parameters.json \
-            --output table
-
-          echo "Infrastructure deployment completed."
-
-      # --------------------------------------------------
-      # 09. VERIFY RESOURCE GROUPS
-      # --------------------------------------------------
-      - name: Verify Resource Groups
-        if: ${{ inputs.deploy_resources == true }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Verifying Resource Groups..."
-
-          while IFS= read -r rg; do
-            az group show \
-              --name "$rg" \
-              --query "{name:name,location:location}" \
-              --output table
-          done < <(jq -r '.landingZones.resourceGroups[].rgName' input.json)
-
-      # --------------------------------------------------
-      # 10. VERIFY VNets AND SUBNETS
-      # --------------------------------------------------
-      - name: Verify VNets and Subnets
-        if: ${{ inputs.deploy_resources == true }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Verifying VNets and Subnets..."
-
-          while IFS=$'\t' read -r rg vnet; do
-
-            az network vnet show \
-              --resource-group "$rg" \
-              --name "$vnet" \
-              --query "{name:name,location:location,addressPrefixes:addressSpace.addressPrefixes}" \
-              --output table
-
-            while IFS= read -r subnet; do
-
-              az network vnet subnet show \
-                --resource-group "$rg" \
-                --vnet-name "$vnet" \
-                --name "$subnet" \
-                --query "{name:name,addressPrefix:addressPrefix}" \
-                --output table
-
-            done < <(
-              jq -r --arg v "$vnet" \
-                '.landingZones.subnets[] | select(.vnetName==$v) | .name' \
-                input.json
-            )
-
-          done < <(
-            jq -r '.landingZones.vnets[] | [.resourceGroupName,.name] | @tsv' input.json
-          )
-
-      # --------------------------------------------------
-      # 11. VERIFY ROUTE TABLES
-      # --------------------------------------------------
-      - name: Verify Route Tables
-        if: ${{ inputs.deploy_resources == true }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Verifying Route Tables..."
-
-          while IFS=$'\t' read -r rg name; do
-            az network route-table show \
-              --resource-group "$rg" \
-              --name "$name" \
-              --query "{name:name,location:location}" \
-              --output table
-          done < <(
-            jq -r '.landingZones.routeTables[] | [.resourceGroupName,.name] | @tsv' input.json
-          )
-
-      # --------------------------------------------------
-      # 12. VERIFY KEY VAULTS
-      # --------------------------------------------------
-      - name: Verify Key Vaults
-        if: ${{ inputs.deploy_resources == true }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Verifying Key Vaults..."
-
-          while IFS= read -r name; do
-            az keyvault show \
-              --name "$name" \
-              --query "{name:name,location:location,id:id}" \
-              --output table
-          done < <(jq -r '.landingZones.keyVaults[].name' input.json)
-
-      # --------------------------------------------------
-      # 13. VERIFY SQL DATABASES
-      # --------------------------------------------------
-      - name: Verify SQL Servers and Databases
-        if: ${{ inputs.deploy_resources == true }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Verifying SQL Servers and Databases..."
-
-          while IFS=$'\t' read -r rg server db; do
-
-            az sql server show \
-              --resource-group "$rg" \
-              --name "$server" \
-              --query "{name:name,location:location}" \
-              --output table
-
-            az sql db show \
-              --resource-group "$rg" \
-              --server "$server" \
-              --name "$db" \
-              --query "{name:name,status:status,sku:sku.name}" \
-              --output table
-
-          done < <(
-            jq -r '.landingZones.sqlDatabases[] | [.resourceGroupName,.serverName,.databaseName] | @tsv' input.json
-          )
-
-      # --------------------------------------------------
-      # 14. VERIFY AZURE OPENAI
-      # --------------------------------------------------
-      - name: Verify Azure OpenAI Services
-        if: ${{ inputs.deploy_resources == true }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Verifying Azure OpenAI Services..."
-
-          while IFS=$'\t' read -r rg name; do
-            az cognitiveservices account show \
-              --resource-group "$rg" \
-              --name "$name" \
-              --query "{name:name,location:location,kind:kind}" \
-              --output table
-          done < <(
-            jq -r '.landingZones.openAiServices[] | [.resourceGroupName,.name] | @tsv' input.json
-          )
-
-      # --------------------------------------------------
-      # 15. CLEAN UP GENERATED PARAMETERS
-      # --------------------------------------------------
-      - name: Remove generated secure parameter file
+      - name: Remove generated secure parameter files
         if: always()
-        shell: bash
-        run: |
-          rm -f deployment.parameters.json
-
-      # --------------------------------------------------
-      # 16. DEPLOYMENT SUMMARY
-      # --------------------------------------------------
-      - name: Generate deployment summary
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo "# PIKE-IAC Infrastructure Deployment"
-            echo ""
-            echo "| Property | Value |"
-            echo "|---|---|"
-            echo "| Ticket ID | $(jq -r '.request.ticketId' input.json) |"
-            echo "| Project | $(jq -r '.request.project' input.json) |"
-            echo "| Environment | $(jq -r '.request.environment' input.json) |"
-            echo "| Location | $(jq -r '.deployment.location' input.json) |"
-            echo "| Deployment requested | ${{ inputs.deploy_resources }} |"
-            echo "| Workflow run | ${GITHUB_RUN_NUMBER} |"
-            echo ""
-            echo "## Configured resource counts"
-            echo ""
-            echo "| Resource | Count |"
-            echo "|---|---:|"
-            jq -r '
-              .landingZones as $z |
-              "| Resource Groups | \($z.resourceGroups | length) |",
-              "| VNets | \($z.vnets | length) |",
-              "| Subnets | \($z.subnets | length) |",
-              "| Route Tables | \($z.routeTables | length) |",
-              "| Key Vaults | \($z.keyVaults | length) |",
-              "| SQL configurations | \($z.sqlDatabases | length) |",
-              "| Azure OpenAI | \($z.openAiServices | length) |"
-            ' input.json
-            echo ""
-            if [[ "${{ inputs.deploy_resources }}" == "true" ]]; then
-              echo "Review deployment and verification steps above for actual results."
-            else
-              echo "What-If preview only. No infrastructure deployment was requested."
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: rm -rf .generated-parameters

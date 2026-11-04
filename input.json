@@ -1,4 +1,3 @@
-
 {
   "request": {
     "ticketId": "PIKE-12345",
@@ -17,12 +16,15 @@
   },
   "deploymentPlan": {
     "resourceGroups": "create",
+    "nsgs": "create",
+    "routeTables": "create",
     "vnets": "create",
     "subnets": "create",
-    "routeTables": "create",
     "keyVaults": "create",
+    "storageAccounts": "create",
     "sqlDatabases": "create",
-    "openAiServices": "create"
+    "openAiServices": "create",
+    "vms": "create"
   },
   "landingZones": {
     "resourceGroups": [
@@ -58,14 +60,26 @@
         "vnetName": "vnet-pikehex-dev-001",
         "resourceGroupName": "rg-pikehex-dev-centralus-001",
         "addressPrefix": "10.40.1.0/24",
-        "networkSecurityGroupName": "",
+        "networkSecurityGroupName": "nsg-pikehex-dev-001",
         "routeTableName": "rt-pikehex-dev-001",
         "serviceEndpoints": [],
         "privateEndpointNetworkPolicies": "Enabled",
         "privateLinkServiceNetworkPolicies": "Enabled"
       }
     ],
-    "nsgs": [],
+    "nsgs": [
+      {
+        "name": "nsg-pikehex-dev-001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "location": "centralus",
+        "securityRules": [],
+        "tags": {
+          "Environment": "dev",
+          "Workload": "pikehex-cloud-migration",
+          "ManagedBy": "Bicep"
+        }
+      }
+    ],
     "routeTables": [
       {
         "name": "rt-pikehex-dev-001",
@@ -80,7 +94,33 @@
         }
       }
     ],
-    "vms": [],
+    "vms": [
+      {
+        "name": "vm-pikehex-dev-001",
+        "computerName": "vm-pike-dev-001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "location": "centralus",
+        "adminUsername": "azureadmin",
+        "vmSize": "Standard_B2s",
+        "tags": {
+          "Environment": "dev",
+          "Workload": "pikehex-cloud-migration",
+          "ManagedBy": "Bicep"
+        },
+        "vnetName": "vnet-pikehex-dev-001",
+        "subnetName": "snet-app-dev-001",
+        "nicName": "nic-pikehex-dev-001",
+        "privateIpAllocationMethod": "Dynamic",
+        "imagePublisher": "MicrosoftWindowsServer",
+        "imageOffer": "WindowsServer",
+        "imageSku": "2022-datacenter-azure-edition",
+        "imageVersion": "latest",
+        "osDiskStorageAccountType": "StandardSSD_LRS",
+        "osDiskCreateOption": "FromImage",
+        "osDiskSizeGB": 128,
+        "enableBootDiagnostics": true
+      }
+    ],
     "keyVaults": [
       {
         "name": "kv-pikehex-dev-cus-001",
@@ -99,7 +139,31 @@
         }
       }
     ],
-    "storageAccounts": [],
+    "storageAccounts": [
+      {
+        "name": "stpikehexdevcus001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "location": "centralus",
+        "tags": {
+          "Environment": "dev",
+          "Workload": "pikehex-cloud-migration",
+          "ManagedBy": "Bicep"
+        },
+        "skuName": "Standard_LRS",
+        "kind": "StorageV2",
+        "accessTier": "Hot",
+        "minimumTlsVersion": "TLS1_2",
+        "supportsHttpsTrafficOnly": true,
+        "allowBlobPublicAccess": false,
+        "allowSharedKeyAccess": true,
+        "publicNetworkAccess": "Enabled",
+        "blobServiceName": "default",
+        "containerNames": [
+          "appdata"
+        ],
+        "containerPublicAccess": "None"
+      }
+    ],
     "sqlDatabases": [
       {
         "serverName": "sql-pikehex-dev-cus-20261103-001",
