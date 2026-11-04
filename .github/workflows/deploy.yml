@@ -17,6 +17,7 @@ jobs:
   modular-deploy:
     name: Validate, preview and deploy individual Bicep modules
     runs-on: ubuntu-latest
+
     env:
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -32,7 +33,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           az bicep install
+
           for file in \
             modules/resourcegroup.bicep \
             modules/networking/nsg.bicep \
@@ -44,9 +47,11 @@ jobs:
             modules/database/sql.bicep \
             modules/ai/openai.bicep \
             modules/compute/vm.bicep; do
+
             echo "Building $file"
             az bicep build --file "$file" --stdout >/dev/null
           done
+
           jq empty input.json
 
       - name: Validate configuration and generate module parameters
@@ -54,76 +59,241 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           test -n "$AZURE_TENANT_ID" || { echo 'Missing AZURE_TENANT_ID secret'; exit 1; }
           test -n "$AZURE_SUBSCRIPTION_ID" || { echo 'Missing AZURE_SUBSCRIPTION_ID secret'; exit 1; }
           test -n "$AZURE_CLIENT_ID" || { echo 'Missing AZURE_CLIENT_ID secret'; exit 1; }
           test -n "$VM_ADMIN_PASSWORD" || { echo 'Missing VM_ADMIN_PASSWORD secret'; exit 1; }
           test -n "$SQL_ADMIN_PASSWORD" || { echo 'Missing SQL_ADMIN_PASSWORD secret'; exit 1; }
+
           umask 077
           mkdir -p .generated-parameters
+
           python - <<'PY'
           import json, os, pathlib
-          c=json.load(open('input.json',encoding='utf-8'))
-          def check(ok,msg):
-              if not ok: raise SystemExit(msg)
-          check(c['request']['approved'] is True,'Request must be approved.')
-          check(c['request']['environment'] in ('dev','test','uat','prod'),'Invalid environment.')
-          check(c['subscription']['subscriptionId']=='${AZURE_SUBSCRIPTION_ID}','subscriptionId must use ${AZURE_SUBSCRIPTION_ID}.')
-          z=c['landingZones']; plan=c['deploymentPlan']; out=pathlib.Path('.generated-parameters')
-          required=('resourceGroups','nsgs','routeTables','vnets','subnets','storageAccounts','keyVaults','vms','sqlDatabases','openAiServices')
-          for k in required: check(isinstance(z.get(k),list),f'landingZones.{k} must be an array')
-          check(len(z['resourceGroups'])==1,'This workflow currently expects exactly one configured resource group.')
-          rg=z['resourceGroups'][0]['rgName']; loc=c['deployment']['location']
+
+          c = json.load(open('input.json', encoding='utf-8'))
+
+          def check(ok, msg):
+              if not ok:
+                  raise SystemExit(msg)
+
+          check(c['request']['approved'] is True, 'Request must be approved.')
+          check(c['request']['environment'] in ('dev', 'test', 'uat', 'prod'), 'Invalid environment.')
+          check(c['subscription']['subscriptionId'] == '${AZURE_SUBSCRIPTION_ID}', 'subscriptionId must use ${AZURE_SUBSCRIPTION_ID}.')
+
+          z = c['landingZones']
+          plan = c['deploymentPlan']
+          out = pathlib.Path('.generated-parameters')
+
+          required = (
+              'resourceGroups', 'nsgs', 'routeTables', 'vnets', 'subnets',
+              'storageAccounts', 'keyVaults', 'vms', 'sqlDatabases', 'openAiServices'
+          )
+
+          for k in required:
+              check(isinstance(z.get(k), list), f'landingZones.{k} must be an array')
+
+          check(len(z['resourceGroups']) == 1, 'This workflow currently expects exactly one configured resource group.')
+
+          rg = z['resourceGroups'][0]['rgName']
+          loc = c['deployment']['location']
+
           for k in required:
               for r in z[k]:
-                  if k!='resourceGroups': check(r.get('resourceGroupName')==rg,f'{k} resource group mismatch: {r}')
-          check(len(z['vms'])<=1,'This workflow currently supports one Windows VM per run.')
+                  if k != 'resourceGroups':
+                      check(r.get('resourceGroupName') == rg, f'{k} resource group mismatch: {r}')
+
+          check(len(z['vms']) <= 1, 'This workflow currently supports one Windows VM per run.')
+
           for vm in z['vms']:
-              check(vm.get('imagePublisher')=='MicrosoftWindowsServer','Only Windows Server VM images are supported.')
-              check(vm.get('vnetName') in [x['name'] for x in z['vnets']],'VM VNet is not configured.')
-              check(vm.get('subnetName') in [x['name'] for x in z['subnets']],'VM subnet is not configured.')
+              check(vm.get('imagePublisher') == 'MicrosoftWindowsServer', 'Only Windows Server VM images are supported.')
+              check(vm.get('vnetName') in [x['name'] for x in z['vnets']], 'VM VNet is not configured.')
+              check(vm.get('subnetName') in [x['name'] for x in z['subnets']], 'VM subnet is not configured.')
+
           for s in z['subnets']:
-              check(s['vnetName'] in [x['name'] for x in z['vnets']],f"VNet missing for subnet {s['name']}")
-              check(not s.get('networkSecurityGroupName') or s['networkSecurityGroupName'] in [x['name'] for x in z['nsgs']],f"NSG missing for subnet {s['name']}")
-              check(not s.get('routeTableName') or s['routeTableName'] in [x['name'] for x in z['routeTables']],f"Route table missing for subnet {s['name']}")
-          check(len(z['sqlDatabases'])<=1,'This workflow currently supports one SQL configuration per run.')
+              check(s['vnetName'] in [x['name'] for x in z['vnets']], f"VNet missing for subnet {s['name']}")
+              check(not s.get('networkSecurityGroupName') or s['networkSecurityGroupName'] in [x['name'] for x in z['nsgs']], f"NSG missing for subnet {s['name']}")
+              check(not s.get('routeTableName') or s['routeTableName'] in [x['name'] for x in z['routeTables']], f"Route table missing for subnet {s['name']}")
+
+          check(len(z['sqlDatabases']) <= 1, 'This workflow currently supports one SQL configuration per run.')
+
           for k in required:
-              check(plan.get(k,'skip') in ('create','skip'),f'deploymentPlan.{k} must be create or skip')
-          # ARM deployment-parameter file wrapper.
+              check(plan.get(k, 'skip') in ('create', 'skip'), f'deploymentPlan.{k} must be create or skip')
+
           def write(name, params):
-              data={'$schema':'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#','contentVersion':'1.0.0.0','parameters':{k:{'value':v} for k,v in params.items()}}
-              json.dump(data,open(out/f'{name}.json','w',encoding='utf-8'),indent=2)
-          rgc=z['resourceGroups'][0]
-          write('resourcegroup',{'rgname':rgc['rgName'],'location':rgc['location'],'tags':rgc['tags']})
+              data = {
+                  '$schema': 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#',
+                  'contentVersion': '1.0.0.0',
+                  'parameters': {k: {'value': v} for k, v in params.items()}
+              }
+
+              json.dump(data, open(out / f'{name}.json', 'w', encoding='utf-8'), indent=2)
+
+          rgc = z['resourceGroups'][0]
+
+          write('resourcegroup', {
+              'rgname': rgc['rgName'],
+              'location': rgc['location'],
+              'tags': rgc['tags']
+          })
+
           for x in z['nsgs']:
-              write('nsg',{'location':x['location'],'nsgName':x['name'],'securityRules':x['securityRules'],'tags':x['tags']})
+              write('nsg', {
+                  'location': x['location'],
+                  'nsgName': x['name'],
+                  'securityRules': x['securityRules'],
+                  'tags': x['tags']
+              })
+
           for x in z['routeTables']:
-              write('routetable',{'routeTableName':x['name'],'location':x['location'],'disableBgpRoutePropagation':x['disableBgpRoutePropagation'],'routes':x['routes'],'tags':x['tags']})
+              write('routetable', {
+                  'routeTableName': x['name'],
+                  'location': x['location'],
+                  'disableBgpRoutePropagation': x['disableBgpRoutePropagation'],
+                  'routes': x['routes'],
+                  'tags': x['tags']
+              })
+
           for x in z['vnets']:
-              vnet_subnets=[]
+              vnet_subnets = []
+
               for sn in z['subnets']:
-                  if sn['vnetName'] != x['name']: continue
-                  props={'addressPrefix':sn['addressPrefix'],'serviceEndpoints':sn['serviceEndpoints'],'privateEndpointNetworkPolicies':sn['privateEndpointNetworkPolicies'],'privateLinkServiceNetworkPolicies':sn['privateLinkServiceNetworkPolicies']}
-                  props['networkSecurityGroup']=({'id':f"/subscriptions/{os.environ['AZURE_SUBSCRIPTION_ID']}/resourceGroups/{sn['resourceGroupName']}/providers/Microsoft.Network/networkSecurityGroups/{sn['networkSecurityGroupName']}"} if sn.get('networkSecurityGroupName') else None)
-                  props['routeTable']=({'id':f"/subscriptions/{os.environ['AZURE_SUBSCRIPTION_ID']}/resourceGroups/{sn['resourceGroupName']}/providers/Microsoft.Network/routeTables/{sn['routeTableName']}"} if sn.get('routeTableName') else None)
-                  vnet_subnets.append({'name':sn['name'],'properties':props})
-              write('vnet',{'location':x['location'],'vnetName':x['name'],'addressPrefixes':x['addressPrefixes'],'tags':x['tags'],'dnsServers':x['dnsServers'],'subnets':vnet_subnets})
+                  if sn['vnetName'] != x['name']:
+                      continue
+
+                  props = {
+                      'addressPrefix': sn['addressPrefix'],
+                      'serviceEndpoints': sn['serviceEndpoints'],
+                      'privateEndpointNetworkPolicies': sn['privateEndpointNetworkPolicies'],
+                      'privateLinkServiceNetworkPolicies': sn['privateLinkServiceNetworkPolicies']
+                  }
+
+                  props['networkSecurityGroup'] = (
+                      {'id': f"/subscriptions/{os.environ['AZURE_SUBSCRIPTION_ID']}/resourceGroups/{sn['resourceGroupName']}/providers/Microsoft.Network/networkSecurityGroups/{sn['networkSecurityGroupName']}"}
+                      if sn.get('networkSecurityGroupName') else None
+                  )
+
+                  props['routeTable'] = (
+                      {'id': f"/subscriptions/{os.environ['AZURE_SUBSCRIPTION_ID']}/resourceGroups/{sn['resourceGroupName']}/providers/Microsoft.Network/routeTables/{sn['routeTableName']}"}
+                      if sn.get('routeTableName') else None
+                  )
+
+                  vnet_subnets.append({
+                      'name': sn['name'],
+                      'properties': props
+                  })
+
+              write('vnet', {
+                  'location': x['location'],
+                  'vnetName': x['name'],
+                  'addressPrefixes': x['addressPrefixes'],
+                  'tags': x['tags'],
+                  'dnsServers': x['dnsServers'],
+                  'subnets': vnet_subnets
+              })
+
           for x in z['subnets']:
-              write('subnet',{'vnetName':x['vnetName'],'subnetName':x['name'],'addressPrefix':x['addressPrefix'],'networkSecurityGroupName':x.get('networkSecurityGroupName',''),'routeTableName':x.get('routeTableName',''),'serviceEndpoints':x['serviceEndpoints'],'privateEndpointNetworkPolicies':x['privateEndpointNetworkPolicies'],'privateLinkServiceNetworkPolicies':x['privateLinkServiceNetworkPolicies']})
+              write('subnet', {
+                  'vnetName': x['vnetName'],
+                  'subnetName': x['name'],
+                  'addressPrefix': x['addressPrefix'],
+                  'networkSecurityGroupName': x.get('networkSecurityGroupName', ''),
+                  'routeTableName': x.get('routeTableName', ''),
+                  'serviceEndpoints': x['serviceEndpoints'],
+                  'privateEndpointNetworkPolicies': x['privateEndpointNetworkPolicies'],
+                  'privateLinkServiceNetworkPolicies': x['privateLinkServiceNetworkPolicies']
+              })
+
           for x in z['keyVaults']:
-              write('keyvault',{'keyVaultName':x['name'],'location':x['location'],'tenantId':os.environ['AZURE_TENANT_ID'],'skuName':x['skuName'],'skuFamily':x['skuFamily'],'enableRbacAuthorization':x['enableRbacAuthorization'],'enablePurgeProtection':x['enablePurgeProtection'],'softDeleteRetentionInDays':x['softDeleteRetentionInDays'],'publicNetworkAccess':x['publicNetworkAccess'],'tags':x['tags']})
+              write('keyvault', {
+                  'keyVaultName': x['name'],
+                  'location': x['location'],
+                  'tenantId': os.environ['AZURE_TENANT_ID'],
+                  'skuName': x['skuName'],
+                  'skuFamily': x['skuFamily'],
+                  'enableRbacAuthorization': x['enableRbacAuthorization'],
+                  'enablePurgeProtection': x['enablePurgeProtection'],
+                  'softDeleteRetentionInDays': x['softDeleteRetentionInDays'],
+                  'publicNetworkAccess': x['publicNetworkAccess'],
+                  'tags': x['tags']
+              })
+
           for x in z['storageAccounts']:
-              write('storage',{'storageAccountName':x['name'],'location':x['location'],'tags':x['tags'],'skuName':x['skuName'],'kind':x['kind'],'accessTier':x['accessTier'],'minimumTlsVersion':x['minimumTlsVersion'],'supportsHttpsTrafficOnly':x['supportsHttpsTrafficOnly'],'allowBlobPublicAccess':x['allowBlobPublicAccess'],'allowSharedKeyAccess':x['allowSharedKeyAccess'],'publicNetworkAccess':x['publicNetworkAccess'],'containerNames':x['containerNames'],'blobServiceName':x['blobServiceName'],'containerPublicAccess':x['containerPublicAccess']})
+              write('storage', {
+                  'storageAccountName': x['name'],
+                  'location': x['location'],
+                  'tags': x['tags'],
+                  'skuName': x['skuName'],
+                  'kind': x['kind'],
+                  'accessTier': x['accessTier'],
+                  'minimumTlsVersion': x['minimumTlsVersion'],
+                  'supportsHttpsTrafficOnly': x['supportsHttpsTrafficOnly'],
+                  'allowBlobPublicAccess': x['allowBlobPublicAccess'],
+                  'allowSharedKeyAccess': x['allowSharedKeyAccess'],
+                  'publicNetworkAccess': x['publicNetworkAccess'],
+                  'containerNames': x['containerNames'],
+                  'blobServiceName': x['blobServiceName'],
+                  'containerPublicAccess': x['containerPublicAccess']
+              })
+
           for x in z['sqlDatabases']:
-              write('sql',{'location':x['location'],'serverName':x['serverName'],'databaseName':x['databaseName'],'administratorLogin':x['administratorLogin'],'administratorLoginPassword':os.environ['SQL_ADMIN_PASSWORD'],'sqlServerVersion':x['sqlServerVersion'],'databaseSkuName':x['databaseSkuName'],'databaseSkuTier':x['databaseSkuTier'],'databaseCapacity':x['databaseCapacity'],'databaseMaxSizeBytes':x['databaseMaxSizeBytes'],'publicNetworkAccess':x['publicNetworkAccess'],'minimumTlsVersion':x['minimumTlsVersion'],'tags':x['tags']})
+              write('sql', {
+                  'location': x['location'],
+                  'serverName': x['serverName'],
+                  'databaseName': x['databaseName'],
+                  'administratorLogin': x['administratorLogin'],
+                  'administratorLoginPassword': os.environ['SQL_ADMIN_PASSWORD'],
+                  'sqlServerVersion': x['sqlServerVersion'],
+                  'databaseSkuName': x['databaseSkuName'],
+                  'databaseSkuTier': x['databaseSkuTier'],
+                  'databaseCapacity': x['databaseCapacity'],
+                  'databaseMaxSizeBytes': x['databaseMaxSizeBytes'],
+                  'publicNetworkAccess': x['publicNetworkAccess'],
+                  'minimumTlsVersion': x['minimumTlsVersion'],
+                  'tags': x['tags']
+              })
+
           for x in z['openAiServices']:
-              write('openai',{'accountName':x['name'],'location':x['location'],'skuName':x['skuName'],'customSubDomainName':x['customSubDomainName'],'publicNetworkAccess':x['publicNetworkAccess'],'tags':x['tags']})
+              write('openai', {
+                  'accountName': x['name'],
+                  'location': x['location'],
+                  'skuName': x['skuName'],
+                  'customSubDomainName': x['customSubDomainName'],
+                  'publicNetworkAccess': x['publicNetworkAccess'],
+                  'tags': x['tags']
+              })
+
           for x in z['vms']:
-              write('vm',{'location':x['location'],'computerName':x['computerName'],'vmName':x['name'],'adminUsername':x['adminUsername'],'vmAdminPassword':os.environ['VM_ADMIN_PASSWORD'],'vmSize':x['vmSize'],'tags':x['tags'],'vnetName':x['vnetName'],'subnetName':x['subnetName'],'nicName':x['nicName'],'privateIpAllocationMethod':x['privateIpAllocationMethod'],'imagePublisher':x['imagePublisher'],'imageOffer':x['imageOffer'],'imageSku':x['imageSku'],'imageVersion':x['imageVersion'],'osDiskStorageAccountType':x['osDiskStorageAccountType'],'osDiskCreateOption':x['osDiskCreateOption'],'osDiskSizeGB':x['osDiskSizeGB'],'enableBootDiagnostics':x['enableBootDiagnostics']})
-          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              write('vm', {
+                  'location': x['location'],
+                  'computerName': x['computerName'],
+                  'vmName': x['name'],
+                  'adminUsername': x['adminUsername'],
+                  'vmAdminPassword': os.environ['VM_ADMIN_PASSWORD'],
+                  'vmSize': x['vmSize'],
+                  'tags': x['tags'],
+                  'vnetName': x['vnetName'],
+                  'subnetName': x['subnetName'],
+                  'nicName': x['nicName'],
+                  'privateIpAllocationMethod': x['privateIpAllocationMethod'],
+                  'imagePublisher': x['imagePublisher'],
+                  'imageOffer': x['imageOffer'],
+                  'imageSku': x['imageSku'],
+                  'imageVersion': x['imageVersion'],
+                  'osDiskStorageAccountType': x['osDiskStorageAccountType'],
+                  'osDiskCreateOption': x['osDiskCreateOption'],
+                  'osDiskSizeGB': x['osDiskSizeGB'],
+                  'enableBootDiagnostics': x['enableBootDiagnostics']
+              })
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"rg_name={rg}\n")
               f.write(f"location={loc}\n")
-              for k in required: f.write(f"{k}={plan.get(k,'skip')}\n")
+
+              for k in required:
+                  f.write(f"{k}={plan.get(k, 'skip')}\n")
+
           print('Validated input.json and generated per-module parameter files.')
           PY
 
@@ -134,92 +304,240 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Preview-only run:
+      # The Resource Group does not exist, so only subscription-scope
+      # What-If can run. Other modules are compiled and parameter-validated.
+      # No Azure resources are created.
       - name: Resource Group | What-If
         if: steps.cfg.outputs.resourceGroups == 'create'
-        run: az deployment sub what-if --name "PIKE-RG-WhatIf-${{ github.run_number }}" --location "${{ steps.cfg.outputs.location }}" --template-file modules/resourcegroup.bicep --parameters @.generated-parameters/resourcegroup.json --output table
+        run: |
+          az deployment sub what-if \
+            --name "PIKE-RG-WhatIf-${{ github.run_number }}" \
+            --location "${{ steps.cfg.outputs.location }}" \
+            --template-file modules/resourcegroup.bicep \
+            --parameters @.generated-parameters/resourcegroup.json \
+            --output table
 
+      # Create Resource Group only through its dedicated Bicep module.
       - name: Resource Group | Deploy
         if: inputs.deploy_resources == true && steps.cfg.outputs.resourceGroups == 'create'
-        run: az deployment sub create --name "PIKE-RG-${{ github.run_number }}" --location "${{ steps.cfg.outputs.location }}" --template-file modules/resourcegroup.bicep --parameters @.generated-parameters/resourcegroup.json --mode Incremental --output table
+        run: |
+          az deployment sub create \
+            --name "PIKE-RG-${{ github.run_number }}" \
+            --location "${{ steps.cfg.outputs.location }}" \
+            --template-file modules/resourcegroup.bicep \
+            --parameters @.generated-parameters/resourcegroup.json \
+            --mode Incremental \
+            --output table
 
+      # NSG
       - name: NSG | What-If
-        if: steps.cfg.outputs.nsgs == 'create'
-        run: az deployment group what-if --name "PIKE-NSG-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/nsg.bicep --parameters @.generated-parameters/nsg.json --output table
+        if: inputs.deploy_resources == true && steps.cfg.outputs.nsgs == 'create'
+        run: |
+          az deployment group what-if \
+            --name "PIKE-NSG-WhatIf-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/networking/nsg.bicep \
+            --parameters @.generated-parameters/nsg.json \
+            --output table
 
       - name: NSG | Deploy
         if: inputs.deploy_resources == true && steps.cfg.outputs.nsgs == 'create'
-        run: az deployment group create --name "PIKE-NSG-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/nsg.bicep --parameters @.generated-parameters/nsg.json --mode Incremental --output table
+        run: |
+          az deployment group create \
+            --name "PIKE-NSG-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/networking/nsg.bicep \
+            --parameters @.generated-parameters/nsg.json \
+            --mode Incremental \
+            --output table
 
+      # Route Table
       - name: Route Table | What-If
-        if: steps.cfg.outputs.routeTables == 'create'
-        run: az deployment group what-if --name "PIKE-RT-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/routetable.bicep --parameters @.generated-parameters/routetable.json --output table
+        if: inputs.deploy_resources == true && steps.cfg.outputs.routeTables == 'create'
+        run: |
+          az deployment group what-if \
+            --name "PIKE-RT-WhatIf-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/networking/routetable.bicep \
+            --parameters @.generated-parameters/routetable.json \
+            --output table
 
       - name: Route Table | Deploy
         if: inputs.deploy_resources == true && steps.cfg.outputs.routeTables == 'create'
-        run: az deployment group create --name "PIKE-RT-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/routetable.bicep --parameters @.generated-parameters/routetable.json --mode Incremental --output table
+        run: |
+          az deployment group create \
+            --name "PIKE-RT-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/networking/routetable.bicep \
+            --parameters @.generated-parameters/routetable.json \
+            --mode Incremental \
+            --output table
 
+      # VNet
       - name: VNet | What-If
-        if: steps.cfg.outputs.vnets == 'create'
-        run: az deployment group what-if --name "PIKE-VNET-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/vnet.bicep --parameters @.generated-parameters/vnet.json --output table
+        if: inputs.deploy_resources == true && steps.cfg.outputs.vnets == 'create'
+        run: |
+          az deployment group what-if \
+            --name "PIKE-VNET-WhatIf-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/networking/vnet.bicep \
+            --parameters @.generated-parameters/vnet.json \
+            --output table
 
       - name: VNet | Deploy
         if: inputs.deploy_resources == true && steps.cfg.outputs.vnets == 'create'
-        run: az deployment group create --name "PIKE-VNET-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/vnet.bicep --parameters @.generated-parameters/vnet.json --mode Incremental --output table
+        run: |
+          az deployment group create \
+            --name "PIKE-VNET-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/networking/vnet.bicep \
+            --parameters @.generated-parameters/vnet.json \
+            --mode Incremental \
+            --output table
 
+      # Subnet
       - name: Subnet | What-If
-        if: steps.cfg.outputs.subnets == 'create'
-        run: az deployment group what-if --name "PIKE-SUBNET-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/subnet.bicep --parameters @.generated-parameters/subnet.json --output table
+        if: inputs.deploy_resources == true && steps.cfg.outputs.subnets == 'create'
+        run: |
+          az deployment group what-if \
+            --name "PIKE-SUBNET-WhatIf-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/networking/subnet.bicep \
+            --parameters @.generated-parameters/subnet.json \
+            --output table
 
       - name: Subnet | Deploy
         if: inputs.deploy_resources == true && steps.cfg.outputs.subnets == 'create'
-        run: az deployment group create --name "PIKE-SUBNET-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/networking/subnet.bicep --parameters @.generated-parameters/subnet.json --mode Incremental --output table
+        run: |
+          az deployment group create \
+            --name "PIKE-SUBNET-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/networking/subnet.bicep \
+            --parameters @.generated-parameters/subnet.json \
+            --mode Incremental \
+            --output table
 
+      # Key Vault
       - name: Key Vault | What-If
-        if: steps.cfg.outputs.keyVaults == 'create'
-        run: az deployment group what-if --name "PIKE-KV-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/security/keyvault.bicep --parameters @.generated-parameters/keyvault.json --output table
+        if: inputs.deploy_resources == true && steps.cfg.outputs.keyVaults == 'create'
+        run: |
+          az deployment group what-if \
+            --name "PIKE-KV-WhatIf-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/security/keyvault.bicep \
+            --parameters @.generated-parameters/keyvault.json \
+            --output table
 
       - name: Key Vault | Deploy
         if: inputs.deploy_resources == true && steps.cfg.outputs.keyVaults == 'create'
-        run: az deployment group create --name "PIKE-KV-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/security/keyvault.bicep --parameters @.generated-parameters/keyvault.json --mode Incremental --output table
+        run: |
+          az deployment group create \
+            --name "PIKE-KV-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/security/keyvault.bicep \
+            --parameters @.generated-parameters/keyvault.json \
+            --mode Incremental \
+            --output table
 
+      # Storage Account
       - name: Storage Account | What-If
-        if: steps.cfg.outputs.storageAccounts == 'create'
-        run: az deployment group what-if --name "PIKE-ST-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/storage/storageAccount.bicep --parameters @.generated-parameters/storage.json --output table
+        if: inputs.deploy_resources == true && steps.cfg.outputs.storageAccounts == 'create'
+        run: |
+          az deployment group what-if \
+            --name "PIKE-ST-WhatIf-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/storage/storageAccount.bicep \
+            --parameters @.generated-parameters/storage.json \
+            --output table
 
       - name: Storage Account | Deploy
         if: inputs.deploy_resources == true && steps.cfg.outputs.storageAccounts == 'create'
-        run: az deployment group create --name "PIKE-ST-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/storage/storageAccount.bicep --parameters @.generated-parameters/storage.json --mode Incremental --output table
+        run: |
+          az deployment group create \
+            --name "PIKE-ST-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/storage/storageAccount.bicep \
+            --parameters @.generated-parameters/storage.json \
+            --mode Incremental \
+            --output table
 
+      # SQL Server and Database
       - name: SQL | What-If
-        if: steps.cfg.outputs.sqlDatabases == 'create'
-        run: az deployment group what-if --name "PIKE-SQL-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/database/sql.bicep --parameters @.generated-parameters/sql.json --output table
+        if: inputs.deploy_resources == true && steps.cfg.outputs.sqlDatabases == 'create'
+        run: |
+          az deployment group what-if \
+            --name "PIKE-SQL-WhatIf-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/database/sql.bicep \
+            --parameters @.generated-parameters/sql.json \
+            --output table
 
       - name: SQL | Deploy
         if: inputs.deploy_resources == true && steps.cfg.outputs.sqlDatabases == 'create'
-        run: az deployment group create --name "PIKE-SQL-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/database/sql.bicep --parameters @.generated-parameters/sql.json --mode Incremental --output table
+        run: |
+          az deployment group create \
+            --name "PIKE-SQL-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/database/sql.bicep \
+            --parameters @.generated-parameters/sql.json \
+            --mode Incremental \
+            --output table
 
+      # Azure OpenAI
       - name: Azure OpenAI | What-If
-        if: steps.cfg.outputs.openAiServices == 'create'
-        run: az deployment group what-if --name "PIKE-OAI-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/ai/openai.bicep --parameters @.generated-parameters/openai.json --output table
+        if: inputs.deploy_resources == true && steps.cfg.outputs.openAiServices == 'create'
+        run: |
+          az deployment group what-if \
+            --name "PIKE-OAI-WhatIf-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/ai/openai.bicep \
+            --parameters @.generated-parameters/openai.json \
+            --output table
 
       - name: Azure OpenAI | Deploy
         if: inputs.deploy_resources == true && steps.cfg.outputs.openAiServices == 'create'
-        run: az deployment group create --name "PIKE-OAI-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/ai/openai.bicep --parameters @.generated-parameters/openai.json --mode Incremental --output table
+        run: |
+          az deployment group create \
+            --name "PIKE-OAI-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/ai/openai.bicep \
+            --parameters @.generated-parameters/openai.json \
+            --mode Incremental \
+            --output table
 
+      # Windows VM
       - name: Windows VM | What-If
-        if: steps.cfg.outputs.vms == 'create'
-        run: az deployment group what-if --name "PIKE-VM-WhatIf-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/compute/vm.bicep --parameters @.generated-parameters/vm.json --output table
+        if: inputs.deploy_resources == true && steps.cfg.outputs.vms == 'create'
+        run: |
+          az deployment group what-if \
+            --name "PIKE-VM-WhatIf-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/compute/vm.bicep \
+            --parameters @.generated-parameters/vm.json \
+            --output table
 
       - name: Windows VM | Deploy
         if: inputs.deploy_resources == true && steps.cfg.outputs.vms == 'create'
-        run: az deployment group create --name "PIKE-VM-${{ github.run_number }}" --resource-group "${{ steps.cfg.outputs.rg_name }}" --template-file modules/compute/vm.bicep --parameters @.generated-parameters/vm.json --mode Incremental --output table
+        run: |
+          az deployment group create \
+            --name "PIKE-VM-${{ github.run_number }}" \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --template-file modules/compute/vm.bicep \
+            --parameters @.generated-parameters/vm.json \
+            --mode Incremental \
+            --output table
 
       - name: Verify deployed resources
         if: inputs.deploy_resources == true
         shell: bash
         run: |
           set -euo pipefail
-          az resource list --resource-group "${{ steps.cfg.outputs.rg_name }}" --query "[].{Name:name,Type:type,Location:location}" --output table
+
+          az resource list \
+            --resource-group "${{ steps.cfg.outputs.rg_name }}" \
+            --query "[].{Name:name,Type:type,Location:location}" \
+            --output table
 
       - name: Remove generated secure parameter files
         if: always()
