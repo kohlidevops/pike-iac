@@ -532,7 +532,6 @@ jobs:
 
       - name: Deploy individual modules
         if: inputs.deploy_resources
-        shell: bash
         env:
           PLAN_NSG: ${{ steps.config.outputs.nsgs }}
           PLAN_RT: ${{ steps.config.outputs.routeTables }}
