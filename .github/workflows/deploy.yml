@@ -1,3 +1,4 @@
+
 name: PIKE-IAC Modular Deployment
 
 on:
@@ -117,8 +118,10 @@ jobs:
               if not condition:
                   raise SystemExit(message)
 
-          check(config["request"]["approved"] is True,
-                "Request is not approved.")
+          check(
+              config["request"]["approved"] is True,
+              "Request is not approved."
+          )
 
           environment = config["request"]["environment"]
 
@@ -127,15 +130,16 @@ jobs:
               if item["environment"] == environment
           ]
 
-          check(len(matching) == 1,
-                f"Expected exactly one subscription for {environment}.")
+          check(
+              len(matching) == 1,
+              f"Expected exactly one subscription for {environment}."
+          )
 
           registry_subscription = matching[0]["sub_id"]
           actual_subscription = os.environ["AZURE_SUBSCRIPTION_ID"]
 
           check(
-              registry_subscription.lower() ==
-              actual_subscription.lower(),
+              registry_subscription.lower() == actual_subscription.lower(),
               "GitHub subscription secret does not match "
               "config/subscriptions.json."
           )
@@ -151,6 +155,8 @@ jobs:
               "vnets",
               "subnets",
               "loadBalancers",
+              "applicationGatewaySubnets",
+              "applicationGateways",
               "keyVaults",
               "storageAccounts",
               "sqlDatabases",
@@ -159,17 +165,25 @@ jobs:
           ]
 
           for key in keys:
-              check(isinstance(zones.get(key), list),
-                    f"Invalid or missing configuration: landingZones.{key}")
+              check(
+                  isinstance(zones.get(key), list),
+                  f"Invalid or missing configuration: landingZones.{key}"
+              )
 
-              check(plan.get(key, "skip") in ("create", "skip"),
-                    f"Invalid deployment plan: {key}")
+              check(
+                  plan.get(key, "skip") in ("create", "skip"),
+                  f"Invalid deployment plan: {key}"
+              )
 
-              check(len(zones[key]) <= 1,
-                    f"Only one {key} entry is supported per run.")
+              check(
+                  len(zones[key]) <= 1,
+                  f"Only one {key} entry is supported per run."
+              )
 
-          check(len(zones["resourceGroups"]) == 1,
-                "Exactly one Resource Group is required.")
+          check(
+              len(zones["resourceGroups"]) == 1,
+              "Exactly one Resource Group is required."
+          )
 
           rg = zones["resourceGroups"][0]["rgName"]
           location = config["deployment"]["location"]
@@ -201,11 +215,16 @@ jobs:
                   }
               }
 
-              with open(output / f"{name}.json", "w",
-                        encoding="utf-8") as f:
+              with open(
+                  output / f"{name}.json",
+                  "w",
+                  encoding="utf-8"
+              ) as f:
                   json.dump(data, f, indent=2)
 
-          # Resource Group
+          # ----------------------------------------
+          # RESOURCE GROUP
+          # ----------------------------------------
 
           x = zones["resourceGroups"][0]
 
@@ -215,7 +234,9 @@ jobs:
               "tags": x["tags"]
           })
 
+          # ----------------------------------------
           # NSG
+          # ----------------------------------------
 
           for x in zones["nsgs"]:
               write("nsg", {
@@ -225,7 +246,9 @@ jobs:
                   "tags": x["tags"]
               })
 
-          # Route Table
+          # ----------------------------------------
+          # ROUTE TABLE
+          # ----------------------------------------
 
           for x in zones["routeTables"]:
               write("routetable", {
@@ -237,8 +260,10 @@ jobs:
                   "tags": x["tags"]
               })
 
-          # VNet
+          # ----------------------------------------
+          # VNET
           # Subnets are deployed separately.
+          # ----------------------------------------
 
           for x in zones["vnets"]:
               write("vnet", {
@@ -250,7 +275,9 @@ jobs:
                   "subnets": []
               })
 
-          # Subnet
+          # ----------------------------------------
+          # APPLICATION SUBNET
+          # ----------------------------------------
 
           for x in zones["subnets"]:
               write("subnet", {
@@ -268,7 +295,20 @@ jobs:
                     x["privateLinkServiceNetworkPolicies"]
               })
 
-          # Load Balancer
+          # ----------------------------------------
+          # APPLICATION GATEWAY SUBNET
+          # ----------------------------------------
+
+          for x in zones["applicationGatewaySubnets"]:
+              write("applicationgatewaysubnet", {
+                  "vnetName": x["vnetName"],
+                  "subnetName": x["subnetName"],
+                  "subnetAddressPrefix": x["subnetAddressPrefix"]
+              })
+
+          # ----------------------------------------
+          # LOAD BALANCER
+          # ----------------------------------------
 
           for x in zones["loadBalancers"]:
               write("loadbalancer", {
@@ -285,7 +325,34 @@ jobs:
                   "loadBalancingRules": x["loadBalancingRules"]
               })
 
-          # Key Vault
+          # ----------------------------------------
+          # APPLICATION GATEWAY
+          # ----------------------------------------
+
+          for x in zones["applicationGateways"]:
+              write("applicationgateway", {
+                  "applicationGatewayName":
+                    x["applicationGatewayName"],
+                  "location": x["location"],
+                  "vnetName": x["vnetName"],
+                  "subnetName": x["subnetName"],
+                  "publicIpName": x["publicIpName"],
+                  "privateFrontendIp": x["privateFrontendIp"],
+                  "minCapacity": x["minCapacity"],
+                  "maxCapacity": x["maxCapacity"],
+                  "frontendPorts": x["frontendPorts"],
+                  "backendPools": x["backendPools"],
+                  "backendHttpSettings": x["backendHttpSettings"],
+                  "healthProbes": x["healthProbes"],
+                  "listeners": x["listeners"],
+                  "routingRules": x["routingRules"],
+                  "enableHttp2": x["enableHttp2"],
+                  "tags": x["tags"]
+              })
+
+          # ----------------------------------------
+          # KEY VAULT
+          # ----------------------------------------
 
           for x in zones["keyVaults"]:
               write("keyvault", {
@@ -304,7 +371,9 @@ jobs:
                   "tags": x["tags"]
               })
 
-          # Storage Account
+          # ----------------------------------------
+          # STORAGE ACCOUNT
+          # ----------------------------------------
 
           for x in zones["storageAccounts"]:
               write("storage", {
@@ -327,7 +396,9 @@ jobs:
                   "containerPublicAccess": x["containerPublicAccess"]
               })
 
+          # ----------------------------------------
           # SQL
+          # ----------------------------------------
 
           for x in zones["sqlDatabases"]:
               write("sql", {
@@ -347,7 +418,9 @@ jobs:
                   "tags": x["tags"]
               })
 
-          # Azure OpenAI
+          # ----------------------------------------
+          # AZURE OPENAI
+          # ----------------------------------------
 
           for x in zones["openAiServices"]:
               write("openai", {
@@ -359,7 +432,9 @@ jobs:
                   "tags": x["tags"]
               })
 
-          # Windows VM
+          # ----------------------------------------
+          # WINDOWS VM
+          # ----------------------------------------
 
           for x in zones["vms"]:
               write("vm", {
@@ -387,19 +462,23 @@ jobs:
                   "enableBootDiagnostics": x["enableBootDiagnostics"]
               })
 
-          # Share Resource Group and deployment plan
+          # ----------------------------------------
+          # GITHUB ENVIRONMENT AND OUTPUTS
+          # ----------------------------------------
 
           with open(os.environ["GITHUB_ENV"], "a") as f:
               f.write(f"RG_NAME={rg}\n")
               f.write(f"LOCATION={location}\n")
-              f.write(f"SELECTED_SUBSCRIPTION_ID={registry_subscription}\n")
+              f.write(
+                  f"SELECTED_SUBSCRIPTION_ID={registry_subscription}\n"
+              )
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               for key in keys:
                   f.write(f"{key}={plan.get(key, 'skip')}\n")
 
           print(f"Environment: {environment}")
-          print(f"Subscription registry validation passed.")
+          print("Subscription registry validation passed.")
           print("All module parameter files generated successfully.")
           PY
 
@@ -415,7 +494,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       # --------------------------------------------
-      # 7. VERIFY SUBSCRIPTION
+      # 7. VERIFY AZURE SUBSCRIPTION
       # --------------------------------------------
 
       - name: Verify Azure subscription
@@ -460,11 +539,14 @@ jobs:
           PLAN_VNET: ${{ steps.config.outputs.vnets }}
           PLAN_SUBNET: ${{ steps.config.outputs.subnets }}
           PLAN_LB: ${{ steps.config.outputs.loadBalancers }}
+          PLAN_APPGW_SUBNET: ${{ steps.config.outputs.applicationGatewaySubnets }}
+          PLAN_APPGW: ${{ steps.config.outputs.applicationGateways }}
           PLAN_KV: ${{ steps.config.outputs.keyVaults }}
           PLAN_STORAGE: ${{ steps.config.outputs.storageAccounts }}
           PLAN_SQL: ${{ steps.config.outputs.sqlDatabases }}
           PLAN_OPENAI: ${{ steps.config.outputs.openAiServices }}
           PLAN_VM: ${{ steps.config.outputs.vms }}
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -489,7 +571,9 @@ jobs:
             fi
           }
 
-          # Network
+          # ----------------------------------------
+          # NETWORK
+          # ----------------------------------------
 
           deploy_module "$PLAN_NSG" \
             "NSG" \
@@ -511,42 +595,74 @@ jobs:
             "modules/networking/subnet.bicep" \
             ".generated-parameters/subnet.json"
 
-          # Load Balancer
+          # ----------------------------------------
+          # APPLICATION GATEWAY SUBNET
+          # Must be deployed after VNet.
+          # ----------------------------------------
+
+          deploy_module "$PLAN_APPGW_SUBNET" \
+            "APPLICATION-GATEWAY-SUBNET" \
+            "modules/networking/applicationGatewaySubnet.bicep" \
+            ".generated-parameters/applicationgatewaysubnet.json"
+
+          # ----------------------------------------
+          # LOAD BALANCER
+          # ----------------------------------------
 
           deploy_module "$PLAN_LB" \
             "LOAD-BALANCER" \
             "modules/loadbalancer/lb.bicep" \
             ".generated-parameters/loadbalancer.json"
 
-          # Security
+          # ----------------------------------------
+          # APPLICATION GATEWAY
+          # Must be deployed after its dedicated subnet.
+          # ----------------------------------------
+
+          deploy_module "$PLAN_APPGW" \
+            "APPLICATION-GATEWAY" \
+            "modules/networking/applicationGateway.bicep" \
+            ".generated-parameters/applicationgateway.json"
+
+          # ----------------------------------------
+          # SECURITY
+          # ----------------------------------------
 
           deploy_module "$PLAN_KV" \
             "KEY-VAULT" \
             "modules/security/keyvault.bicep" \
             ".generated-parameters/keyvault.json"
 
-          # Storage
+          # ----------------------------------------
+          # STORAGE
+          # ----------------------------------------
 
           deploy_module "$PLAN_STORAGE" \
             "STORAGE" \
             "modules/storage/storageAccount.bicep" \
             ".generated-parameters/storage.json"
 
-          # Database
+          # ----------------------------------------
+          # DATABASE
+          # ----------------------------------------
 
           deploy_module "$PLAN_SQL" \
             "SQL" \
             "modules/database/sql.bicep" \
             ".generated-parameters/sql.json"
 
+          # ----------------------------------------
           # AI
+          # ----------------------------------------
 
           deploy_module "$PLAN_OPENAI" \
             "OPENAI" \
             "modules/ai/openai.bicep" \
             ".generated-parameters/openai.json"
 
-          # Compute
+          # ----------------------------------------
+          # COMPUTE
+          # ----------------------------------------
 
           deploy_module "$PLAN_VM" \
             "VM" \

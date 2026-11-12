@@ -1,3 +1,4 @@
+
 {
   "request": {
     "ticketId": "PIKE-12345",
@@ -15,16 +16,18 @@
     "location": "centralus"
   },
   "deploymentPlan": {
-    "resourceGroups": "create",
+    "resourceGroups": "skip",
     "nsgs": "create",
     "routeTables": "create",
     "vnets": "create",
     "subnets": "create",
-    "loadBalancers": "create",
-    "keyVaults": "create",
+    "loadBalancers": "skip",
+    "applicationGatewaySubnets": "create",
+    "applicationGateways": "create",
+    "keyVaults": "skip",
     "storageAccounts": "create",
     "sqlDatabases": "create",
-    "openAiServices": "create",
+    "openAiServices": "skip",
     "vms": "create"
   },
   "landingZones": {
@@ -68,57 +71,150 @@
         "privateLinkServiceNetworkPolicies": "Enabled"
       }
     ],
+    "applicationGatewaySubnets": [
+      {
+        "vnetName": "vnet-pikehex-dev-001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "subnetName": "snet-appgw-dev-001",
+        "subnetAddressPrefix": "10.40.2.0/24"
+      }
+    ],
+    "applicationGateways": [
+      {
+        "applicationGatewayName": "appgw-pikehex-dev-001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "location": "centralus",
+        "vnetName": "vnet-pikehex-dev-001",
+        "subnetName": "snet-appgw-dev-001",
+        "publicIpName": "pip-appgw-pikehex-dev-001",
+        "privateFrontendIp": "10.40.2.10",
+        "minCapacity": 1,
+        "maxCapacity": 2,
+        "enableHttp2": true,
+        "frontendPorts": [
+          {
+            "name": "port-http-80",
+            "port": 80
+          }
+        ],
+        "backendPools": [
+          {
+            "name": "backend-pool-001",
+            "backendAddresses": []
+          }
+        ],
+        "healthProbes": [
+          {
+            "name": "probe-http",
+            "protocol": "Http",
+            "host": "127.0.0.1",
+            "path": "/health",
+            "interval": 30,
+            "timeout": 30,
+            "unhealthyThreshold": 3,
+            "statusCodes": [
+              "200-399"
+            ]
+          }
+        ],
+        "backendHttpSettings": [
+          {
+            "name": "http-settings-80",
+            "port": 80,
+            "protocol": "Http",
+            "requestTimeout": 30,
+            "cookieBasedAffinity": "Disabled",
+            "probeName": "probe-http"
+          }
+        ],
+        "listeners": [
+          {
+            "name": "listener-public-http",
+            "frontendIPConfigurationName": "frontend-public",
+            "frontendPortName": "port-http-80",
+            "protocol": "Http"
+          },
+          {
+            "name": "listener-private-http",
+            "frontendIPConfigurationName": "frontend-private",
+            "frontendPortName": "port-http-80",
+            "protocol": "Http"
+          }
+        ],
+        "routingRules": [
+          {
+            "name": "rule-public-http",
+            "priority": 100,
+            "listenerName": "listener-public-http",
+            "backendPoolName": "backend-pool-001",
+            "httpSettingName": "http-settings-80"
+          },
+          {
+            "name": "rule-private-http",
+            "priority": 101,
+            "listenerName": "listener-private-http",
+            "backendPoolName": "backend-pool-001",
+            "httpSettingName": "http-settings-80"
+          }
+        ],
+        "tags": {
+          "Environment": "dev",
+          "Workload": "pikehex-cloud-migration",
+          "ManagedBy": "Bicep"
+        }
+      }
+    ],
     "loadBalancers": [
-  {
-    "name": "lb-pikehex-dev-001",
-    "resourceGroupName": "rg-pikehex-dev-centralus-001",
-    "location": "centralus",
-    "skuName": "Standard",
-    "skuTier": "Regional",
-    "vnetName": "vnet-pikehex-dev-001",
-    "subnetName": "snet-app-dev-001",
-    "frontends": [
       {
-        "name": "frontend-private-001",
-        "privateIp": "10.40.1.10"
+        "name": "lb-pikehex-dev-001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "location": "centralus",
+        "skuName": "Standard",
+        "skuTier": "Regional",
+        "vnetName": "vnet-pikehex-dev-001",
+        "subnetName": "snet-app-dev-001",
+        "frontends": [
+          {
+            "name": "frontend-private-001",
+            "privateIp": "10.40.1.10"
+          }
+        ],
+        "backendPools": [
+          {
+            "name": "backend-pool-001",
+            "addresses": []
+          }
+        ],
+        "probes": [
+          {
+            "name": "probe-tcp-80",
+            "protocol": "Tcp",
+            "port": 80,
+            "intervalInSeconds": 15,
+            "numberOfProbes": 2
+          }
+        ],
+        "loadBalancingRules": [
+          {
+            "name": "rule-tcp-80",
+            "frontendName": "frontend-private-001",
+            "backendPoolName": "backend-pool-001",
+            "probeName": "probe-tcp-80",
+            "protocol": "Tcp",
+            "frontendPort": 80,
+            "backendPort": 80,
+            "idleTimeoutInMinutes": 4,
+            "enableFloatingIp": false,
+            "enableTcpReset": true
+          }
+        ],
+        "tags": {
+          "Environment": "dev",
+          "Workload": "pikehex-cloud-migration",
+          "ManagedBy": "Bicep"
+        }
       }
     ],
-    "backendPools": [
-      {
-        "name": "backend-pool-001",
-        "addresses": []
-      }
-    ],
-    "probes": [
-      {
-        "name": "probe-tcp-80",
-        "protocol": "Tcp",
-        "port": 80,
-        "intervalInSeconds": 15,
-        "numberOfProbes": 2
-      }
-    ],
-    "loadBalancingRules": [
-      {
-        "name": "rule-tcp-80",
-        "frontendName": "frontend-private-001",
-        "backendPoolName": "backend-pool-001",
-        "probeName": "probe-tcp-80",
-        "protocol": "Tcp",
-        "frontendPort": 80,
-        "backendPort": 80,
-        "idleTimeoutInMinutes": 4,
-        "enableFloatingIp": false,
-        "enableTcpReset": true
-      }
-    ],
-    "tags": {
-      "Environment": "dev",
-      "Workload": "pikehex-cloud-migration",
-      "ManagedBy": "Bicep"
-       }
-     }
-   ],
     "nsgs": [
       {
         "name": "nsg-pikehex-dev-001",
