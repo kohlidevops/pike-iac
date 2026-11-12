@@ -175,7 +175,7 @@
     ],
     "keyVaults": [
       {
-        "name": "kv-pikehex-dev-cus-003",
+        "name": "kv-pikehex-dev-cus-003-test",
         "resourceGroupName": "rg-pikehex-dev-centralus-001",
         "location": "centralus",
         "skuName": "standard",
