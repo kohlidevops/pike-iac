@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   deploy:
-    name: Lint and Deploy Individual Modules
+    name: Validate and Deploy Individual Modules
     runs-on: ubuntu-latest
 
     env:
@@ -39,8 +39,9 @@ jobs:
       # --------------------------------------------
 
       - name: Install tools
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
           az bicep install
           pip install yamllint
 
@@ -56,7 +57,9 @@ jobs:
           find modules -type f -name '*.bicep' -print0 |
           while IFS= read -r -d '' file; do
             echo "Building: $file"
-            az bicep build --file "$file" --stdout > /dev/null
+            az bicep build \
+              --file "$file" \
+              --stdout > /dev/null
           done
 
       # --------------------------------------------
@@ -77,7 +80,10 @@ jobs:
           done
 
       - name: Lint GitHub Actions YAML
-        run: yamllint -d relaxed .github/workflows/
+        shell: bash
+        run: |
+          set -euo pipefail
+          yamllint -d relaxed .github/workflows/
 
       # --------------------------------------------
       # 5. GENERATE PARAMETERS FROM input.json
@@ -104,6 +110,9 @@ jobs:
           with open("input.json", encoding="utf-8") as f:
               config = json.load(f)
 
+          with open("config/subscriptions.json", encoding="utf-8") as f:
+              subscriptions = json.load(f)
+
           def check(condition, message):
               if not condition:
                   raise SystemExit(message)
@@ -111,9 +120,25 @@ jobs:
           check(config["request"]["approved"] is True,
                 "Request is not approved.")
 
-          check(config["subscription"]["subscriptionId"] ==
-                "${AZURE_SUBSCRIPTION_ID}",
-                "Invalid subscription configuration.")
+          environment = config["request"]["environment"]
+
+          matching = [
+              item for item in subscriptions
+              if item["environment"] == environment
+          ]
+
+          check(len(matching) == 1,
+                f"Expected exactly one subscription for {environment}.")
+
+          registry_subscription = matching[0]["sub_id"]
+          actual_subscription = os.environ["AZURE_SUBSCRIPTION_ID"]
+
+          check(
+              registry_subscription.lower() ==
+              actual_subscription.lower(),
+              "GitHub subscription secret does not match "
+              "config/subscriptions.json."
+          )
 
           zones = config["landingZones"]
           plan = config["deploymentPlan"]
@@ -125,6 +150,7 @@ jobs:
               "routeTables",
               "vnets",
               "subnets",
+              "loadBalancers",
               "keyVaults",
               "storageAccounts",
               "sqlDatabases",
@@ -134,7 +160,7 @@ jobs:
 
           for key in keys:
               check(isinstance(zones.get(key), list),
-                    f"Invalid configuration: {key}")
+                    f"Invalid or missing configuration: landingZones.{key}")
 
               check(plan.get(key, "skip") in ("create", "skip"),
                     f"Invalid deployment plan: {key}")
@@ -153,8 +179,10 @@ jobs:
           for key in keys:
               for item in zones[key]:
                   if key != "resourceGroups":
-                      check(item.get("resourceGroupName") == rg,
-                            f"Resource Group mismatch in {key}")
+                      check(
+                          item.get("resourceGroupName") == rg,
+                          f"Resource Group mismatch in {key}"
+                      )
 
           check(
               len(zones["vms"]) <= 1 and
@@ -178,6 +206,7 @@ jobs:
                   json.dump(data, f, indent=2)
 
           # Resource Group
+
           x = zones["resourceGroups"][0]
 
           write("resourcegroup", {
@@ -187,6 +216,7 @@ jobs:
           })
 
           # NSG
+
           for x in zones["nsgs"]:
               write("nsg", {
                   "location": x["location"],
@@ -196,6 +226,7 @@ jobs:
               })
 
           # Route Table
+
           for x in zones["routeTables"]:
               write("routetable", {
                   "routeTableName": x["name"],
@@ -207,7 +238,8 @@ jobs:
               })
 
           # VNet
-          # Subnets are deployed separately below.
+          # Subnets are deployed separately.
+
           for x in zones["vnets"]:
               write("vnet", {
                   "location": x["location"],
@@ -219,6 +251,7 @@ jobs:
               })
 
           # Subnet
+
           for x in zones["subnets"]:
               write("subnet", {
                   "vnetName": x["vnetName"],
@@ -235,7 +268,25 @@ jobs:
                     x["privateLinkServiceNetworkPolicies"]
               })
 
+          # Load Balancer
+
+          for x in zones["loadBalancers"]:
+              write("loadbalancer", {
+                  "loadBalancerName": x["name"],
+                  "location": x["location"],
+                  "skuName": x["skuName"],
+                  "skuTier": x["skuTier"],
+                  "tags": x["tags"],
+                  "vnetName": x["vnetName"],
+                  "subnetName": x["subnetName"],
+                  "frontends": x["frontends"],
+                  "backendPools": x["backendPools"],
+                  "probes": x["probes"],
+                  "loadBalancingRules": x["loadBalancingRules"]
+              })
+
           # Key Vault
+
           for x in zones["keyVaults"]:
               write("keyvault", {
                   "keyVaultName": x["name"],
@@ -254,6 +305,7 @@ jobs:
               })
 
           # Storage Account
+
           for x in zones["storageAccounts"]:
               write("storage", {
                   "storageAccountName": x["name"],
@@ -276,6 +328,7 @@ jobs:
               })
 
           # SQL
+
           for x in zones["sqlDatabases"]:
               write("sql", {
                   "location": x["location"],
@@ -295,6 +348,7 @@ jobs:
               })
 
           # Azure OpenAI
+
           for x in zones["openAiServices"]:
               write("openai", {
                   "accountName": x["name"],
@@ -306,6 +360,7 @@ jobs:
               })
 
           # Windows VM
+
           for x in zones["vms"]:
               write("vm", {
                   "location": x["location"],
@@ -332,15 +387,19 @@ jobs:
                   "enableBootDiagnostics": x["enableBootDiagnostics"]
               })
 
-          # Share Resource Group and deployment plan with workflow
+          # Share Resource Group and deployment plan
+
           with open(os.environ["GITHUB_ENV"], "a") as f:
               f.write(f"RG_NAME={rg}\n")
               f.write(f"LOCATION={location}\n")
+              f.write(f"SELECTED_SUBSCRIPTION_ID={registry_subscription}\n")
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               for key in keys:
                   f.write(f"{key}={plan.get(key, 'skip')}\n")
 
+          print(f"Environment: {environment}")
+          print(f"Subscription registry validation passed.")
           print("All module parameter files generated successfully.")
           PY
 
@@ -356,7 +415,23 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       # --------------------------------------------
-      # 7. RESOURCE GROUP
+      # 7. VERIFY SUBSCRIPTION
+      # --------------------------------------------
+
+      - name: Verify Azure subscription
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          az account set \
+            --subscription "$SELECTED_SUBSCRIPTION_ID"
+
+          az account show \
+            --query "{Name:name,Subscription:id,Tenant:tenantId}" \
+            --output table
+
+      # --------------------------------------------
+      # 8. RESOURCE GROUP
       # --------------------------------------------
 
       - name: Deploy Resource Group
@@ -373,7 +448,7 @@ jobs:
             --output table
 
       # --------------------------------------------
-      # 8. DEPLOY INDIVIDUAL MODULES
+      # 9. DEPLOY INDIVIDUAL MODULES
       # --------------------------------------------
 
       - name: Deploy individual modules
@@ -384,6 +459,7 @@ jobs:
           PLAN_RT: ${{ steps.config.outputs.routeTables }}
           PLAN_VNET: ${{ steps.config.outputs.vnets }}
           PLAN_SUBNET: ${{ steps.config.outputs.subnets }}
+          PLAN_LB: ${{ steps.config.outputs.loadBalancers }}
           PLAN_KV: ${{ steps.config.outputs.keyVaults }}
           PLAN_STORAGE: ${{ steps.config.outputs.storageAccounts }}
           PLAN_SQL: ${{ steps.config.outputs.sqlDatabases }}
@@ -414,6 +490,7 @@ jobs:
           }
 
           # Network
+
           deploy_module "$PLAN_NSG" \
             "NSG" \
             "modules/networking/nsg.bicep" \
@@ -434,52 +511,68 @@ jobs:
             "modules/networking/subnet.bicep" \
             ".generated-parameters/subnet.json"
 
+          # Load Balancer
+
+          deploy_module "$PLAN_LB" \
+            "LOAD-BALANCER" \
+            "modules/loadbalancer/lb.bicep" \
+            ".generated-parameters/loadbalancer.json"
+
           # Security
+
           deploy_module "$PLAN_KV" \
             "KEY-VAULT" \
             "modules/security/keyvault.bicep" \
             ".generated-parameters/keyvault.json"
 
           # Storage
+
           deploy_module "$PLAN_STORAGE" \
             "STORAGE" \
             "modules/storage/storageAccount.bicep" \
             ".generated-parameters/storage.json"
 
           # Database
+
           deploy_module "$PLAN_SQL" \
             "SQL" \
             "modules/database/sql.bicep" \
             ".generated-parameters/sql.json"
 
           # AI
+
           deploy_module "$PLAN_OPENAI" \
             "OPENAI" \
             "modules/ai/openai.bicep" \
             ".generated-parameters/openai.json"
 
           # Compute
+
           deploy_module "$PLAN_VM" \
             "VM" \
             "modules/compute/vm.bicep" \
             ".generated-parameters/vm.json"
 
       # --------------------------------------------
-      # 9. VERIFY
+      # 10. VERIFY DEPLOYED RESOURCES
       # --------------------------------------------
 
       - name: Verify deployed resources
         if: inputs.deploy_resources
+        shell: bash
         run: |
+          set -euo pipefail
+
           az resource list \
             --resource-group "$RG_NAME" \
             --query "[].{Name:name,Type:type,Location:location}" \
             --output table
 
       # --------------------------------------------
-      # 10. CLEANUP
+      # 11. CLEANUP
       # --------------------------------------------
 
       - name: Cleanup generated parameters
         if: always()
+        shell: bash
         run: rm -rf .generated-parameters

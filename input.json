@@ -20,6 +20,7 @@
     "routeTables": "create",
     "vnets": "create",
     "subnets": "create",
+    "loadBalancers": "create",
     "keyVaults": "create",
     "storageAccounts": "create",
     "sqlDatabases": "create",
@@ -67,6 +68,57 @@
         "privateLinkServiceNetworkPolicies": "Enabled"
       }
     ],
+    "loadBalancers": [
+  {
+    "name": "lb-pikehex-dev-001",
+    "resourceGroupName": "rg-pikehex-dev-centralus-001",
+    "location": "centralus",
+    "skuName": "Standard",
+    "skuTier": "Regional",
+    "vnetName": "vnet-pikehex-dev-001",
+    "subnetName": "snet-app-dev-001",
+    "frontends": [
+      {
+        "name": "frontend-private-001",
+        "privateIp": "10.40.1.10"
+      }
+    ],
+    "backendPools": [
+      {
+        "name": "backend-pool-001",
+        "addresses": []
+      }
+    ],
+    "probes": [
+      {
+        "name": "probe-tcp-80",
+        "protocol": "Tcp",
+        "port": 80,
+        "intervalInSeconds": 15,
+        "numberOfProbes": 2
+      }
+    ],
+    "loadBalancingRules": [
+      {
+        "name": "rule-tcp-80",
+        "frontendName": "frontend-private-001",
+        "backendPoolName": "backend-pool-001",
+        "probeName": "probe-tcp-80",
+        "protocol": "Tcp",
+        "frontendPort": 80,
+        "backendPort": 80,
+        "idleTimeoutInMinutes": 4,
+        "enableFloatingIp": false,
+        "enableTcpReset": true
+      }
+    ],
+    "tags": {
+      "Environment": "dev",
+      "Workload": "pikehex-cloud-migration",
+      "ManagedBy": "Bicep"
+       }
+     }
+   ],
     "nsgs": [
       {
         "name": "nsg-pikehex-dev-001",
