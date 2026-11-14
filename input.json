@@ -336,10 +336,10 @@
     "openAiServices": [
       {
         "name": "oai-pikehex-dev-cus-001",
-        "resourceGroupName": "rg-pikehex-dev-centralus-001",
+        "resourceGroupName": "rg-pikehex-dev-centralus-002",
         "location": "centralus",
         "skuName": "S0",
-        "customSubDomainName": "oai-pikehex-dev-cus-001",
+        "customSubDomainName": "oai-pikehex-dev-cus-002",
         "publicNetworkAccess": "Enabled",
         "tags": {
           "Environment": "dev",
