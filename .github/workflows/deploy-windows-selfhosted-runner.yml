@@ -1,4 +1,4 @@
-name: PIKE-IAC Modular Deployment
+name: PIKE-IAC Modular Deployment With SelfHosted Runner
 
 on:
   workflow_dispatch:
