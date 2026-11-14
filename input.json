@@ -27,7 +27,7 @@
     "keyVaults": "skip",
     "storageAccounts": "create",
     "sqlDatabases": "create",
-    "openAiServices": "skip",
+    "openAiServices": "create",
     "vms": "create"
   },
   "landingZones": {
