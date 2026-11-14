@@ -1,3 +1,4 @@
+
 name: PIKE-IAC Modular Deployment With SelfHosted Runner
 
 on:
@@ -17,6 +18,7 @@ jobs:
   deploy:
     name: Validate and Deploy Individual Modules
     runs-on: [self-hosted, Windows, X64, pike]
+
     defaults:
       run:
         shell: powershell
@@ -29,44 +31,89 @@ jobs:
       SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
 
     steps:
+
       # --------------------------------------------
       # 1. CHECKOUT
       # --------------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
       # --------------------------------------------
       # 2. VERIFY WINDOWS RUNNER TOOLS
-      # Tools are installed on the VM, not on every run.
       # --------------------------------------------
+
       - name: Verify Windows runner tools
         run: |
           $ErrorActionPreference = "Stop"
 
-          $requiredCommands = @("git", "python", "az", "jq")
+          # Locate Git in common Windows installation paths.
+          $gitCandidates = @(
+            (Join-Path $env:ProgramFiles "Git\cmd\git.exe"),
+            (Join-Path $env:ProgramFiles "Git\bin\git.exe"),
+            (Join-Path $env:LOCALAPPDATA "Programs\Git\cmd\git.exe"),
+            (Join-Path $env:USERPROFILE "AppData\Local\Programs\Git\cmd\git.exe"),
+            "C:\Program Files (x86)\Git\cmd\git.exe"
+          )
+
+          $gitCommand = Get-Command git.exe -ErrorAction SilentlyContinue
+
+          if ($gitCommand) {
+            $gitExe = $gitCommand.Source
+          }
+          else {
+            $gitExe = $gitCandidates |
+              Where-Object { $_ -and (Test-Path -LiteralPath $_) } |
+              Select-Object -First 1
+          }
+
+          if ($gitExe) {
+            $gitDirectory = Split-Path -Parent $gitExe
+
+            if (($env:PATH -split ';') -notcontains $gitDirectory) {
+              $env:PATH = "$gitDirectory;$env:PATH"
+            }
+
+            Add-Content -LiteralPath $env:GITHUB_PATH -Value $gitDirectory
+
+            & $gitExe --version
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Git verification failed."
+            }
+          }
+          else {
+            Write-Warning "Git CLI not found in runner PATH. Checkout has already completed. Continuing because deployment steps do not invoke Git."
+          }
+
+          # Required commands.
+          $requiredCommands = @("python", "az", "jq")
+
           foreach ($commandName in $requiredCommands) {
             if (-not (Get-Command $commandName -ErrorAction SilentlyContinue)) {
-              throw "Required command '$commandName' was not found in PATH."
+              throw "Required command '$commandName' was not found in PATH. Check the GitHub runner service account PATH."
             }
           }
 
-          git --version
-          if ($LASTEXITCODE -ne 0) { throw "Git verification failed." }
-
+          Write-Host "===== PYTHON ====="
           python --version
           if ($LASTEXITCODE -ne 0) { throw "Python verification failed." }
 
+          Write-Host "===== AZURE CLI ====="
           az version
           if ($LASTEXITCODE -ne 0) { throw "Azure CLI verification failed." }
 
+          Write-Host "===== JQ ====="
           jq --version
           if ($LASTEXITCODE -ne 0) { throw "jq verification failed." }
 
+          Write-Host "===== YAMLLINT ====="
           python -m yamllint --version
           if ($LASTEXITCODE -ne 0) {
-            throw "yamllint is missing. Install it with: python -m pip install yamllint"
+            throw "yamllint is missing. Install using python -m pip install yamllint"
           }
 
+          Write-Host "===== BICEP ====="
           az bicep install
           if ($LASTEXITCODE -ne 0) { throw "Bicep installation failed." }
 
@@ -78,18 +125,22 @@ jobs:
       # --------------------------------------------
       # 3. LINT ALL BICEP MODULES
       # --------------------------------------------
+
       - name: Lint Bicep modules
         run: |
           $ErrorActionPreference = "Stop"
 
           $bicepFiles = Get-ChildItem -Path "modules" -Recurse -File -Filter "*.bicep"
+
           if (-not $bicepFiles) {
             throw "No Bicep files were found under modules/."
           }
 
           foreach ($file in $bicepFiles) {
             Write-Host "Building: $($file.FullName)"
+
             az bicep build --file $file.FullName --stdout | Out-Null
+
             if ($LASTEXITCODE -ne 0) {
               throw "Bicep build failed: $($file.FullName)"
             }
@@ -100,6 +151,7 @@ jobs:
       # --------------------------------------------
       # 4. VALIDATE JSON AND WORKFLOW YAML
       # --------------------------------------------
+
       - name: Validate JSON
         run: |
           $ErrorActionPreference = "Stop"
@@ -112,9 +164,11 @@ jobs:
 
           foreach ($file in $jsonFiles) {
             Write-Host "Checking JSON: $($file.FullName)"
+
             try {
               Get-Content -LiteralPath $file.FullName -Raw |
-                ConvertFrom-Json -ErrorAction Stop | Out-Null
+                ConvertFrom-Json -ErrorAction Stop |
+                Out-Null
             }
             catch {
               throw "Invalid JSON in $($file.FullName): $($_.Exception.Message)"
@@ -126,22 +180,30 @@ jobs:
       - name: Lint GitHub Actions YAML
         run: |
           $ErrorActionPreference = "Stop"
+
           python -m yamllint -d relaxed .github/workflows/
+
           if ($LASTEXITCODE -ne 0) {
             throw "GitHub Actions YAML lint failed."
           }
 
       # --------------------------------------------
       # 5. GENERATE PARAMETERS FROM input.json
-      # input.json remains the source of truth.
       # --------------------------------------------
+
       - name: Generate module parameters
         id: config
         run: |
           $ErrorActionPreference = "Stop"
 
-          foreach ($secretName in @("AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID")) {
-            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($secretName))) {
+          foreach ($secretName in @(
+            "AZURE_CLIENT_ID",
+            "AZURE_TENANT_ID",
+            "AZURE_SUBSCRIPTION_ID"
+          )) {
+            if ([string]::IsNullOrWhiteSpace(
+              [Environment]::GetEnvironmentVariable($secretName)
+            )) {
               throw "Required GitHub secret '$secretName' is missing."
             }
           }
@@ -163,14 +225,26 @@ jobs:
               if not condition:
                   raise SystemExit(message)
 
-          check(config["request"]["approved"] is True, "Request is not approved.")
+          check(
+              config["request"]["approved"] is True,
+              "Request is not approved."
+          )
 
           environment = config["request"]["environment"]
-          matching = [item for item in subscriptions if item["environment"] == environment]
-          check(len(matching) == 1, f"Expected exactly one subscription for {environment}.")
+
+          matching = [
+              item for item in subscriptions
+              if item["environment"] == environment
+          ]
+
+          check(
+              len(matching) == 1,
+              f"Expected exactly one subscription for {environment}."
+          )
 
           registry_subscription = matching[0]["sub_id"]
           actual_subscription = os.environ["AZURE_SUBSCRIPTION_ID"]
+
           check(
               registry_subscription.lower() == actual_subscription.lower(),
               "GitHub subscription secret does not match config/subscriptions.json."
@@ -181,148 +255,271 @@ jobs:
           output = Path(".generated-parameters")
 
           keys = [
-              "resourceGroups", "nsgs", "routeTables", "vnets", "subnets",
-              "loadBalancers", "applicationGatewaySubnets", "applicationGateways",
-              "keyVaults", "storageAccounts", "sqlDatabases", "openAiServices", "vms"
+              "resourceGroups",
+              "nsgs",
+              "routeTables",
+              "vnets",
+              "subnets",
+              "loadBalancers",
+              "applicationGatewaySubnets",
+              "applicationGateways",
+              "keyVaults",
+              "storageAccounts",
+              "sqlDatabases",
+              "openAiServices",
+              "vms"
           ]
 
           for key in keys:
-              check(isinstance(zones.get(key), list), f"Invalid or missing configuration: landingZones.{key}")
-              check(plan.get(key, "skip") in ("create", "skip"), f"Invalid deployment plan: {key}")
-              check(len(zones[key]) <= 1, f"Only one {key} entry is supported per run.")
+              check(
+                  isinstance(zones.get(key), list),
+                  f"Invalid or missing configuration: landingZones.{key}"
+              )
 
-          check(len(zones["resourceGroups"]) == 1, "Exactly one Resource Group is required.")
+              check(
+                  plan.get(key, "skip") in ("create", "skip"),
+                  f"Invalid deployment plan: {key}"
+              )
+
+              check(
+                  len(zones[key]) <= 1,
+                  f"Only one {key} entry is supported per run."
+              )
+
+          check(
+              len(zones["resourceGroups"]) == 1,
+              "Exactly one Resource Group is required."
+          )
+
           rg = zones["resourceGroups"][0]["rgName"]
           location = config["deployment"]["location"]
+
           check(bool(rg), "Resource Group name is empty.")
 
           for key in keys:
               for item in zones[key]:
                   if key != "resourceGroups":
-                      check(item.get("resourceGroupName") == rg, f"Resource Group mismatch in {key}")
+                      check(
+                          item.get("resourceGroupName") == rg,
+                          f"Resource Group mismatch in {key}"
+                      )
 
-          check(len(zones["vms"]) <= 1 and len(zones["sqlDatabases"]) <= 1,
-                "Only one VM and one SQL configuration are supported.")
+          check(
+              len(zones["vms"]) <= 1 and
+              len(zones["sqlDatabases"]) <= 1,
+              "Only one VM and one SQL configuration are supported."
+          )
 
           if plan.get("vms") == "create" and zones["vms"]:
-              check(bool(os.environ.get("VM_ADMIN_PASSWORD")), "VM_ADMIN_PASSWORD secret is required for VM deployment.")
+              check(
+                  bool(os.environ.get("VM_ADMIN_PASSWORD")),
+                  "VM_ADMIN_PASSWORD secret is required for VM deployment."
+              )
+
           if plan.get("sqlDatabases") == "create" and zones["sqlDatabases"]:
-              check(bool(os.environ.get("SQL_ADMIN_PASSWORD")), "SQL_ADMIN_PASSWORD secret is required for SQL deployment.")
+              check(
+                  bool(os.environ.get("SQL_ADMIN_PASSWORD")),
+                  "SQL_ADMIN_PASSWORD secret is required for SQL deployment."
+              )
 
           def write(name, params):
               data = {
                   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
                   "contentVersion": "1.0.0.0",
-                  "parameters": {key: {"value": value} for key, value in params.items()}
+                  "parameters": {
+                      key: {"value": value}
+                      for key, value in params.items()
+                  }
               }
+
               with open(output / f"{name}.json", "w", encoding="utf-8") as f:
                   json.dump(data, f, indent=2)
 
           # RESOURCE GROUP
           x = zones["resourceGroups"][0]
-          write("resourcegroup", {"rgname": x["rgName"], "location": x["location"], "tags": x["tags"]})
+
+          write("resourcegroup", {
+              "rgname": x["rgName"],
+              "location": x["location"],
+              "tags": x["tags"]
+          })
 
           # NSG
           for x in zones["nsgs"]:
-              write("nsg", {"location": x["location"], "nsgName": x["name"],
-                  "securityRules": x["securityRules"], "tags": x["tags"]})
+              write("nsg", {
+                  "location": x["location"],
+                  "nsgName": x["name"],
+                  "securityRules": x["securityRules"],
+                  "tags": x["tags"]
+              })
 
           # ROUTE TABLE
           for x in zones["routeTables"]:
-              write("routetable", {"routeTableName": x["name"], "location": x["location"],
+              write("routetable", {
+                  "routeTableName": x["name"],
+                  "location": x["location"],
                   "disableBgpRoutePropagation": x["disableBgpRoutePropagation"],
-                  "routes": x["routes"], "tags": x["tags"]})
+                  "routes": x["routes"],
+                  "tags": x["tags"]
+              })
 
           # VNET
           for x in zones["vnets"]:
-              write("vnet", {"location": x["location"], "vnetName": x["name"],
-                  "addressPrefixes": x["addressPrefixes"], "tags": x["tags"],
-                  "dnsServers": x["dnsServers"], "subnets": []})
+              write("vnet", {
+                  "location": x["location"],
+                  "vnetName": x["name"],
+                  "addressPrefixes": x["addressPrefixes"],
+                  "tags": x["tags"],
+                  "dnsServers": x["dnsServers"],
+                  "subnets": []
+              })
 
           # APPLICATION SUBNET
           for x in zones["subnets"]:
-              write("subnet", {"vnetName": x["vnetName"], "subnetName": x["name"],
+              write("subnet", {
+                  "vnetName": x["vnetName"],
+                  "subnetName": x["name"],
                   "addressPrefix": x["addressPrefix"],
                   "networkSecurityGroupName": x.get("networkSecurityGroupName", ""),
                   "routeTableName": x.get("routeTableName", ""),
                   "serviceEndpoints": x["serviceEndpoints"],
                   "privateEndpointNetworkPolicies": x["privateEndpointNetworkPolicies"],
-                  "privateLinkServiceNetworkPolicies": x["privateLinkServiceNetworkPolicies"]})
+                  "privateLinkServiceNetworkPolicies": x["privateLinkServiceNetworkPolicies"]
+              })
 
           # APPLICATION GATEWAY SUBNET
           for x in zones["applicationGatewaySubnets"]:
-              write("applicationgatewaysubnet", {"vnetName": x["vnetName"],
-                  "subnetName": x["subnetName"], "subnetAddressPrefix": x["subnetAddressPrefix"]})
+              write("applicationgatewaysubnet", {
+                  "vnetName": x["vnetName"],
+                  "subnetName": x["subnetName"],
+                  "subnetAddressPrefix": x["subnetAddressPrefix"]
+              })
 
           # LOAD BALANCER
           for x in zones["loadBalancers"]:
-              write("loadbalancer", {"loadBalancerName": x["name"], "location": x["location"],
-                  "skuName": x["skuName"], "skuTier": x["skuTier"], "tags": x["tags"],
-                  "vnetName": x["vnetName"], "subnetName": x["subnetName"],
-                  "frontends": x["frontends"], "backendPools": x["backendPools"],
-                  "probes": x["probes"], "loadBalancingRules": x["loadBalancingRules"]})
+              write("loadbalancer", {
+                  "loadBalancerName": x["name"],
+                  "location": x["location"],
+                  "skuName": x["skuName"],
+                  "skuTier": x["skuTier"],
+                  "tags": x["tags"],
+                  "vnetName": x["vnetName"],
+                  "subnetName": x["subnetName"],
+                  "frontends": x["frontends"],
+                  "backendPools": x["backendPools"],
+                  "probes": x["probes"],
+                  "loadBalancingRules": x["loadBalancingRules"]
+              })
 
           # APPLICATION GATEWAY
           for x in zones["applicationGateways"]:
-              write("applicationgateway", {"applicationGatewayName": x["applicationGatewayName"],
-                  "location": x["location"], "vnetName": x["vnetName"], "subnetName": x["subnetName"],
-                  "publicIpName": x["publicIpName"], "privateFrontendIp": x["privateFrontendIp"],
-                  "minCapacity": x["minCapacity"], "maxCapacity": x["maxCapacity"],
-                  "frontendPorts": x["frontendPorts"], "backendPools": x["backendPools"],
-                  "backendHttpSettings": x["backendHttpSettings"], "healthProbes": x["healthProbes"],
-                  "listeners": x["listeners"], "routingRules": x["routingRules"],
-                  "enableHttp2": x["enableHttp2"], "tags": x["tags"]})
+              write("applicationgateway", {
+                  "applicationGatewayName": x["applicationGatewayName"],
+                  "location": x["location"],
+                  "vnetName": x["vnetName"],
+                  "subnetName": x["subnetName"],
+                  "publicIpName": x["publicIpName"],
+                  "privateFrontendIp": x["privateFrontendIp"],
+                  "minCapacity": x["minCapacity"],
+                  "maxCapacity": x["maxCapacity"],
+                  "frontendPorts": x["frontendPorts"],
+                  "backendPools": x["backendPools"],
+                  "backendHttpSettings": x["backendHttpSettings"],
+                  "healthProbes": x["healthProbes"],
+                  "listeners": x["listeners"],
+                  "routingRules": x["routingRules"],
+                  "enableHttp2": x["enableHttp2"],
+                  "tags": x["tags"]
+              })
 
           # KEY VAULT
           for x in zones["keyVaults"]:
-              write("keyvault", {"keyVaultName": x["name"], "location": x["location"],
-                  "tenantId": os.environ["AZURE_TENANT_ID"], "skuName": x["skuName"],
-                  "skuFamily": x["skuFamily"], "enableRbacAuthorization": x["enableRbacAuthorization"],
+              write("keyvault", {
+                  "keyVaultName": x["name"],
+                  "location": x["location"],
+                  "tenantId": os.environ["AZURE_TENANT_ID"],
+                  "skuName": x["skuName"],
+                  "skuFamily": x["skuFamily"],
+                  "enableRbacAuthorization": x["enableRbacAuthorization"],
                   "enablePurgeProtection": x["enablePurgeProtection"],
                   "softDeleteRetentionInDays": x["softDeleteRetentionInDays"],
-                  "publicNetworkAccess": x["publicNetworkAccess"], "tags": x["tags"]})
+                  "publicNetworkAccess": x["publicNetworkAccess"],
+                  "tags": x["tags"]
+              })
 
           # STORAGE ACCOUNT
           for x in zones["storageAccounts"]:
-              write("storage", {"storageAccountName": x["name"], "location": x["location"],
-                  "tags": x["tags"], "skuName": x["skuName"], "kind": x["kind"],
-                  "accessTier": x["accessTier"], "minimumTlsVersion": x["minimumTlsVersion"],
+              write("storage", {
+                  "storageAccountName": x["name"],
+                  "location": x["location"],
+                  "tags": x["tags"],
+                  "skuName": x["skuName"],
+                  "kind": x["kind"],
+                  "accessTier": x["accessTier"],
+                  "minimumTlsVersion": x["minimumTlsVersion"],
                   "supportsHttpsTrafficOnly": x["supportsHttpsTrafficOnly"],
                   "allowBlobPublicAccess": x["allowBlobPublicAccess"],
                   "allowSharedKeyAccess": x["allowSharedKeyAccess"],
-                  "publicNetworkAccess": x["publicNetworkAccess"], "containerNames": x["containerNames"],
-                  "blobServiceName": x["blobServiceName"], "containerPublicAccess": x["containerPublicAccess"]})
+                  "publicNetworkAccess": x["publicNetworkAccess"],
+                  "containerNames": x["containerNames"],
+                  "blobServiceName": x["blobServiceName"],
+                  "containerPublicAccess": x["containerPublicAccess"]
+              })
 
           # SQL
           for x in zones["sqlDatabases"]:
-              write("sql", {"location": x["location"], "serverName": x["serverName"],
-                  "databaseName": x["databaseName"], "administratorLogin": x["administratorLogin"],
+              write("sql", {
+                  "location": x["location"],
+                  "serverName": x["serverName"],
+                  "databaseName": x["databaseName"],
+                  "administratorLogin": x["administratorLogin"],
                   "administratorLoginPassword": os.environ["SQL_ADMIN_PASSWORD"],
-                  "sqlServerVersion": x["sqlServerVersion"], "databaseSkuName": x["databaseSkuName"],
-                  "databaseSkuTier": x["databaseSkuTier"], "databaseCapacity": x["databaseCapacity"],
+                  "sqlServerVersion": x["sqlServerVersion"],
+                  "databaseSkuName": x["databaseSkuName"],
+                  "databaseSkuTier": x["databaseSkuTier"],
+                  "databaseCapacity": x["databaseCapacity"],
                   "databaseMaxSizeBytes": x["databaseMaxSizeBytes"],
                   "publicNetworkAccess": x["publicNetworkAccess"],
-                  "minimumTlsVersion": x["minimumTlsVersion"], "tags": x["tags"]})
+                  "minimumTlsVersion": x["minimumTlsVersion"],
+                  "tags": x["tags"]
+              })
 
           # AZURE OPENAI
           for x in zones["openAiServices"]:
-              write("openai", {"accountName": x["name"], "location": x["location"],
-                  "skuName": x["skuName"], "customSubDomainName": x["customSubDomainName"],
-                  "publicNetworkAccess": x["publicNetworkAccess"], "tags": x["tags"]})
+              write("openai", {
+                  "accountName": x["name"],
+                  "location": x["location"],
+                  "skuName": x["skuName"],
+                  "customSubDomainName": x["customSubDomainName"],
+                  "publicNetworkAccess": x["publicNetworkAccess"],
+                  "tags": x["tags"]
+              })
 
           # WINDOWS VM
           for x in zones["vms"]:
-              write("vm", {"location": x["location"], "computerName": x["computerName"],
-                  "vmName": x["name"], "adminUsername": x["adminUsername"],
-                  "vmAdminPassword": os.environ["VM_ADMIN_PASSWORD"], "vmSize": x["vmSize"],
-                  "tags": x["tags"], "vnetName": x["vnetName"], "subnetName": x["subnetName"],
-                  "nicName": x["nicName"], "privateIpAllocationMethod": x["privateIpAllocationMethod"],
-                  "imagePublisher": x["imagePublisher"], "imageOffer": x["imageOffer"],
-                  "imageSku": x["imageSku"], "imageVersion": x["imageVersion"],
+              write("vm", {
+                  "location": x["location"],
+                  "computerName": x["computerName"],
+                  "vmName": x["name"],
+                  "adminUsername": x["adminUsername"],
+                  "vmAdminPassword": os.environ["VM_ADMIN_PASSWORD"],
+                  "vmSize": x["vmSize"],
+                  "tags": x["tags"],
+                  "vnetName": x["vnetName"],
+                  "subnetName": x["subnetName"],
+                  "nicName": x["nicName"],
+                  "privateIpAllocationMethod": x["privateIpAllocationMethod"],
+                  "imagePublisher": x["imagePublisher"],
+                  "imageOffer": x["imageOffer"],
+                  "imageSku": x["imageSku"],
+                  "imageVersion": x["imageVersion"],
                   "osDiskStorageAccountType": x["osDiskStorageAccountType"],
-                  "osDiskCreateOption": x["osDiskCreateOption"], "osDiskSizeGB": x["osDiskSizeGB"],
-                  "enableBootDiagnostics": x["enableBootDiagnostics"]})
+                  "osDiskCreateOption": x["osDiskCreateOption"],
+                  "osDiskSizeGB": x["osDiskSizeGB"],
+                  "enableBootDiagnostics": x["enableBootDiagnostics"]
+              })
 
+          # GITHUB ENVIRONMENT AND OUTPUTS
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
               f.write(f"RG_NAME={rg}\n")
               f.write(f"LOCATION={location}\n")
@@ -339,8 +536,11 @@ jobs:
           '@
 
           $pythonFile = Join-Path $env:RUNNER_TEMP "generate_parameters.py"
+
           Set-Content -LiteralPath $pythonFile -Value $pythonScript -Encoding utf8
+
           python $pythonFile
+
           if ($LASTEXITCODE -ne 0) {
             throw "Parameter generation failed."
           }
@@ -348,6 +548,7 @@ jobs:
       # --------------------------------------------
       # 6. AZURE LOGIN (OIDC)
       # --------------------------------------------
+
       - name: Azure Login
         uses: azure/login@v2
         with:
@@ -358,20 +559,27 @@ jobs:
       # --------------------------------------------
       # 7. VERIFY SUBSCRIPTION
       # --------------------------------------------
+
       - name: Verify Azure subscription
         run: |
           $ErrorActionPreference = "Stop"
 
           az account set --subscription "$env:SELECTED_SUBSCRIPTION_ID"
-          if ($LASTEXITCODE -ne 0) { throw "Unable to select Azure subscription." }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to select Azure subscription."
+          }
 
           az account show --query "{Name:name,Subscription:id,Tenant:tenantId}" --output table
-          if ($LASTEXITCODE -ne 0) { throw "Unable to read Azure subscription." }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to read Azure subscription."
+          }
 
       # --------------------------------------------
       # 8. PRE-DEPLOYMENT RESOURCE CHECKS
-      # No resources are created or deleted in this step.
       # --------------------------------------------
+
       - name: Pre-deployment resource checks
         if: inputs.deploy_resources
         env:
@@ -381,100 +589,133 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          # Resource Group: if plan says skip, it must already exist.
+          # RESOURCE GROUP
           $rgExists = (az group exists --name "$env:RG_NAME" --output tsv).Trim()
-          if ($LASTEXITCODE -ne 0) { throw "Unable to check Resource Group existence." }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Unable to check Resource Group existence."
+          }
 
           if ($rgExists -ne "true" -and $env:PLAN_RG -ne "create") {
-            throw "Resource Group '$env:RG_NAME' does not exist, but deploymentPlan.resourceGroups is '$env:PLAN_RG'. Set it to 'create' in input.json."
+            throw "Resource Group '$env:RG_NAME' does not exist. Set deploymentPlan.resourceGroups to create in input.json."
           }
 
           if ($rgExists -eq "true") {
-            Write-Host "PASS: Resource Group '$env:RG_NAME' already exists."
+            Write-Host "PASS: Resource Group already exists."
           }
-          elseif ($env:PLAN_RG -eq "create") {
-            Write-Host "PASS: Resource Group '$env:RG_NAME' will be created by the Resource Group deployment step."
+          else {
+            Write-Host "PASS: Resource Group will be created."
           }
 
-          # Key Vault checks run only when Key Vault deployment is selected.
+          $config = Get-Content -LiteralPath "input.json" -Raw | ConvertFrom-Json
+
+          # KEY VAULT
           if ($env:PLAN_KV -eq "create") {
-            $config = Get-Content -LiteralPath "input.json" -Raw | ConvertFrom-Json
             $kv = $config.landingZones.keyVaults[0]
             $kvName = [string]$kv.name
 
             $activeVaultsJson = & az keyvault list --query "[?name=='$kvName'].{name:name,resourceGroup:resourceGroup}" --output json
-            if ($LASTEXITCODE -ne 0) { throw "Unable to list active Key Vaults. Check permissions." }
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Unable to list active Key Vaults. Check permissions."
+            }
+
             $activeVaults = @($activeVaultsJson | ConvertFrom-Json)
 
             if ($activeVaults.Count -gt 0) {
               $existingVault = $activeVaults[0]
+
               if ($existingVault.resourceGroup -ne $env:RG_NAME) {
-                throw "Key Vault '$kvName' already exists in Resource Group '$($existingVault.resourceGroup)', not '$env:RG_NAME'. Choose another name or investigate the existing vault."
+                throw "Key Vault '$kvName' already exists in another Resource Group: $($existingVault.resourceGroup)."
               }
-              Write-Host "PASS: Key Vault '$kvName' is already active in the target Resource Group; deployment can update it."
+
+              Write-Host "PASS: Key Vault exists in the target Resource Group."
             }
             else {
               $deletedVaultsJson = & az keyvault list-deleted --query "[?name=='$kvName'].{name:name,location:properties.location}" --output json
-              if ($LASTEXITCODE -ne 0) { throw "Unable to list soft-deleted Key Vaults. Check Key Vault permissions." }
+
+              if ($LASTEXITCODE -ne 0) {
+                throw "Unable to list soft-deleted Key Vaults. Check permissions."
+              }
+
               $deletedVaults = @($deletedVaultsJson | ConvertFrom-Json)
 
               if ($deletedVaults.Count -gt 0) {
-                throw "BLOCKED: Key Vault '$kvName' is soft-deleted. Recover it or resolve its retention/purge-protection state before deployment. This workflow will not purge it."
+                throw "BLOCKED: Key Vault '$kvName' is soft-deleted. Recover it or resolve its retention/purge-protection state. This workflow will not purge it."
               }
-              Write-Host "PASS: No active or soft-deleted Key Vault named '$kvName' was found in this subscription."
+
+              Write-Host "PASS: No active or soft-deleted Key Vault with this name was found."
             }
           }
           else {
-            Write-Host "Key Vault pre-check skipped because deploymentPlan.keyVaults is '$env:PLAN_KV'."
+            Write-Host "Key Vault check skipped. Deployment plan: $env:PLAN_KV"
           }
 
-          # Azure OpenAI account and custom subdomain checks.
+          # AZURE OPENAI
           if ($env:PLAN_OPENAI -eq "create") {
-            $config = Get-Content -LiteralPath "input.json" -Raw | ConvertFrom-Json
             $openAi = $config.landingZones.openAiServices[0]
             $accountName = [string]$openAi.name
             $subdomainName = [string]$openAi.customSubDomainName
 
             $accountsJson = & az cognitiveservices account list --query "[?name=='$accountName'].{name:name,resourceGroup:resourceGroup,location:location,kind:kind}" --output json
-            if ($LASTEXITCODE -ne 0) { throw "Unable to list Cognitive Services accounts. Check permissions." }
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Unable to list Cognitive Services accounts. Check permissions."
+            }
+
             $accounts = @($accountsJson | ConvertFrom-Json)
 
             if ($accounts.Count -gt 0) {
               $existingAccount = $accounts[0]
+
               if ($existingAccount.resourceGroup -ne $env:RG_NAME) {
-                throw "Azure OpenAI account '$accountName' already exists in Resource Group '$($existingAccount.resourceGroup)'. Choose another account name or investigate the existing account."
+                throw "Azure OpenAI account '$accountName' already exists in Resource Group '$($existingAccount.resourceGroup)'."
               }
-              Write-Host "PASS: Azure OpenAI account '$accountName' already exists in the target Resource Group; deployment can update it."
+
+              Write-Host "PASS: Azure OpenAI account exists in target Resource Group."
             }
             else {
               $subscriptionId = $env:SELECTED_SUBSCRIPTION_ID
+
               $domainUrl = "https://management.azure.com/subscriptions/$subscriptionId/providers/Microsoft.CognitiveServices/checkDomainAvailability?api-version=2017-04-18"
-              $body = @{ subdomainName = $subdomainName; type = "Microsoft.CognitiveServices/accounts" } | ConvertTo-Json -Compress
+
+              $body = @{
+                subdomainName = $subdomainName
+                type = "Microsoft.CognitiveServices/accounts"
+              } | ConvertTo-Json -Compress
+
               $domainJson = & az rest --method post --url $domainUrl --body $body
-              if ($LASTEXITCODE -ne 0) { throw "Azure OpenAI custom subdomain availability check failed. Check Cognitive Services permissions and API response." }
+
+              if ($LASTEXITCODE -ne 0) {
+                throw "Azure OpenAI custom subdomain availability check failed."
+              }
+
               $domainResult = $domainJson | ConvertFrom-Json
 
               if ($domainResult.isSubdomainAvailable -ne $true) {
-                throw "Azure OpenAI custom subdomain '$subdomainName' is unavailable. API reason: $($domainResult.reason)"
+                throw "Azure OpenAI custom subdomain '$subdomainName' is unavailable. Reason: $($domainResult.reason)"
               }
-              Write-Host "PASS: Azure OpenAI account name '$accountName' was not found and custom subdomain '$subdomainName' is available."
+
+              Write-Host "PASS: Azure OpenAI account name and custom subdomain are available."
             }
           }
           else {
-            Write-Host "Azure OpenAI pre-check skipped because deploymentPlan.openAiServices is '$env:PLAN_OPENAI'."
+            Write-Host "Azure OpenAI check skipped. Deployment plan: $env:PLAN_OPENAI"
           }
 
-          Write-Host "All selected pre-deployment resource checks passed."
+          Write-Host "All selected pre-deployment checks passed."
 
       # --------------------------------------------
       # 9. DEPLOY RESOURCE GROUP
       # --------------------------------------------
+
       - name: Deploy Resource Group
         if: inputs.deploy_resources && steps.config.outputs.resourceGroups == 'create'
         run: |
           $ErrorActionPreference = "Stop"
 
           $deploymentName = "PIKE-RG-${{ github.run_number }}"
+
           $azArgs = @(
             "deployment", "sub", "create",
             "--name", $deploymentName,
@@ -485,11 +726,15 @@ jobs:
           )
 
           & az @azArgs
-          if ($LASTEXITCODE -ne 0) { throw "Resource Group deployment failed." }
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Resource Group deployment failed."
+          }
 
       # --------------------------------------------
       # 10. DEPLOY INDIVIDUAL MODULES
       # --------------------------------------------
+
       - name: Deploy individual modules
         if: inputs.deploy_resources
         env:
@@ -520,12 +765,15 @@ jobs:
               if (-not (Test-Path -LiteralPath $Template)) {
                 throw "Bicep template not found: $Template"
               }
+
               if (-not (Test-Path -LiteralPath $ParametersFile)) {
                 throw "Generated parameter file not found: $ParametersFile"
               }
 
               Write-Host "Deploying module: $Name"
+
               $deploymentName = "PIKE-$Name-${{ github.run_number }}"
+
               $azArgs = @(
                 "deployment", "group", "create",
                 "--name", $deploymentName,
@@ -537,7 +785,10 @@ jobs:
               )
 
               & az @azArgs
-              if ($LASTEXITCODE -ne 0) { throw "Deployment failed for module: $Name" }
+
+              if ($LASTEXITCODE -ne 0) {
+                throw "Deployment failed for module: $Name"
+              }
             }
             else {
               Write-Host "Skipping module: $Name (plan: $Plan)"
@@ -546,8 +797,11 @@ jobs:
 
           # NETWORK
           Deploy-Module "$env:PLAN_NSG" "NSG" "modules/networking/nsg.bicep" ".generated-parameters/nsg.json"
+
           Deploy-Module "$env:PLAN_RT" "ROUTE-TABLE" "modules/networking/routetable.bicep" ".generated-parameters/routetable.json"
+
           Deploy-Module "$env:PLAN_VNET" "VNET" "modules/networking/vnet.bicep" ".generated-parameters/vnet.json"
+
           Deploy-Module "$env:PLAN_SUBNET" "SUBNET" "modules/networking/subnet.bicep" ".generated-parameters/subnet.json"
 
           # APPLICATION GATEWAY SUBNET
@@ -577,12 +831,17 @@ jobs:
       # --------------------------------------------
       # 11. VERIFY DEPLOYED RESOURCES
       # --------------------------------------------
+
       - name: Verify deployed resources
         if: inputs.deploy_resources
         run: |
           $ErrorActionPreference = "Stop"
 
-          az resource list --resource-group "$env:RG_NAME" --query "[].{Name:name,Type:type,Location:location}" --output table
+          az resource list `
+            --resource-group "$env:RG_NAME" `
+            --query "[].{Name:name,Type:type,Location:location}" `
+            --output table
+
           if ($LASTEXITCODE -ne 0) {
             throw "Unable to list resources in Resource Group '$env:RG_NAME'."
           }
@@ -590,10 +849,12 @@ jobs:
       # --------------------------------------------
       # 12. CLEANUP
       # --------------------------------------------
+
       - name: Cleanup generated parameters
         if: always()
         run: |
           $ErrorActionPreference = "Continue"
+
           if (Test-Path -LiteralPath ".generated-parameters") {
             Remove-Item -LiteralPath ".generated-parameters" -Recurse -Force
             Write-Host "Generated parameter files cleaned up."
