@@ -330,7 +330,6 @@ jobs:
 
             try {
               $jsonContent = Get-Content -LiteralPath $file.FullName -Raw
-
               $null = ConvertFrom-Json -InputObject $jsonContent -ErrorAction Stop
 
               Write-Host "VALID JSON: $($file.Name)" -ForegroundColor Green
@@ -421,8 +420,20 @@ jobs:
 
           for key in keys:
               for item in zones[key]:
-                  if key != "resourceGroups":
-                      check(item.get("resourceGroupName") == rg, f"Resource Group mismatch in {key}")
+                  if key == "resourceGroups":
+                      continue
+
+                  configured_rg = str(item.get("resourceGroupName", "")).strip()
+                  expected_rg = str(rg).strip()
+
+                  print(f"Checking {key}:")
+                  print(f"  Expected Resource Group : {expected_rg}")
+                  print(f"  Configured Resource Group: {configured_rg}")
+
+                  check(
+                      configured_rg.lower() == expected_rg.lower(),
+                      f"Resource Group mismatch in {key}: expected '{expected_rg}', got '{configured_rg}'"
+                  )
 
           check(len(zones["vms"]) <= 1 and len(zones["sqlDatabases"]) <= 1,
                 "Only one VM and one SQL configuration are supported.")
@@ -702,26 +713,67 @@ jobs:
 
           # Azure OpenAI checks
           if ($env:PLAN_OPENAI -eq 'create' -and $config.landingZones.openAiServices.Count -gt 0) {
+
             $openAi = $config.landingZones.openAiServices[0]
             $accountName = [string]$openAi.name
             $subdomainName = [string]$openAi.customSubDomainName
 
-            $accountsJson = az cognitiveservices account list --query "[?name=='$accountName'].{name:name,resourceGroup:resourceGroup,location:location,kind:kind}" --output json
+            Write-Host "Checking Azure OpenAI account: $accountName"
+            Write-Host "Expected Resource Group: $env:RG_NAME"
+
+            # Get matching Azure OpenAI account resource IDs
+            $accountIds = az cognitiveservices account list `
+              --query "[?name=='$accountName'].id" `
+              --output tsv
 
             if ($LASTEXITCODE -ne 0) {
               throw 'Unable to list Cognitive Services accounts. Check Azure permissions.'
             }
 
-            $accounts = @($accountsJson | ConvertFrom-Json)
-
-            if ($accounts.Count -gt 0) {
-              if ($accounts[0].resourceGroup -ne $env:RG_NAME) {
-                throw "Azure OpenAI account '$accountName' already exists in Resource Group '$($accounts[0].resourceGroup)'."
+            # Convert CLI output into a clean array
+            $accountIds = @(
+              $accountIds -split "`r?`n" |
+              Where-Object {
+                -not [string]::IsNullOrWhiteSpace($_)
               }
+            )
 
-              Write-Host 'PASS: Azure OpenAI account exists in target Resource Group; deployment can update it.'
+            if ($accountIds.Count -gt 0) {
+
+              foreach ($accountId in $accountIds) {
+
+                Write-Host "Found Azure account resource ID: $accountId"
+
+                # Extract Resource Group from Azure resource ID
+                if ($accountId -match '/resourceGroups/([^/]+)/providers/Microsoft\.CognitiveServices/accounts/') {
+
+                  $existingResourceGroup = $Matches[1]
+
+                  Write-Host "Existing account: $accountName"
+                  Write-Host "Existing Resource Group: $existingResourceGroup"
+                  Write-Host "Target Resource Group: $env:RG_NAME"
+
+                  if ($existingResourceGroup -ieq $env:RG_NAME) {
+
+                    Write-Host 'PASS: Azure OpenAI account exists in the target Resource Group.'
+                    Write-Host 'The deployment can perform an incremental update.'
+
+                  }
+                  else {
+
+                    throw "Azure OpenAI account '$accountName' already exists in Resource Group '$existingResourceGroup', not '$env:RG_NAME'."
+                  }
+                }
+                else {
+                  throw "Unable to extract Resource Group from Azure resource ID: $accountId"
+                }
+              }
             }
             else {
+
+              Write-Host 'Azure OpenAI account does not exist.'
+              Write-Host 'Checking custom subdomain availability.'
+
               $domainUrl = "https://management.azure.com/subscriptions/$env:SELECTED_SUBSCRIPTION_ID/providers/Microsoft.CognitiveServices/checkDomainAvailability?api-version=2017-04-18"
 
               $body = @{
@@ -729,7 +781,10 @@ jobs:
                 type = 'Microsoft.CognitiveServices/accounts'
               } | ConvertTo-Json -Compress
 
-              $domainJson = az rest --method post --url $domainUrl --body $body
+              $domainJson = az rest `
+                --method post `
+                --url $domainUrl `
+                --body $body
 
               if ($LASTEXITCODE -ne 0) {
                 throw 'Azure OpenAI custom subdomain availability API call failed.'
