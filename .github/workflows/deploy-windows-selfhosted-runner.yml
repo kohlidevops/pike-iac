@@ -378,15 +378,30 @@ jobs:
 
           Write-Host 'All JSON files are valid.' -ForegroundColor Green
 
+      # --------------------------------------------
+      # 5B. DIAGNOSTIC GITHUB ACTIONS YAML LINT
+      # --------------------------------------------
+
       - name: Lint GitHub Actions YAML
         run: |
           $ErrorActionPreference = 'Stop'
 
-          python -m yamllint -d relaxed .github/workflows/
+          Write-Host '===== GITHUB ACTIONS YAML LINT ====='
 
-          if ($LASTEXITCODE -ne 0) {
-            throw 'GitHub Actions YAML lint failed.'
+          $lintOutput = & python -m yamllint -d relaxed -f parsable .github/workflows/ 2>&1
+          $lintExitCode = $LASTEXITCODE
+
+          if ($lintOutput) {
+            $lintOutput | ForEach-Object {
+              Write-Host "$_"
+            }
           }
+
+          if ($lintExitCode -ne 0) {
+            throw "GitHub Actions YAML lint failed with exit code: $lintExitCode"
+          }
+
+          Write-Host 'All GitHub Actions YAML files passed lint validation.' -ForegroundColor Green
 
       # --------------------------------------------
       # 6. GENERATE PARAMETERS FROM input.json
