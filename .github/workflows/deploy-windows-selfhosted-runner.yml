@@ -13,6 +13,8 @@ on:
 permissions:
   id-token: write
   contents: read
+  actions: read
+  security-events: write
 
 jobs:
   deploy:
@@ -299,7 +301,22 @@ jobs:
           Write-Host 'Windows runner tool discovery and verification passed.'
 
       # --------------------------------------------
-      # 3. LINT ALL BICEP MODULES
+      # 3. CODEQL SECURITY ANALYSIS
+      # --------------------------------------------
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: actions
+          queries: security-extended
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:actions"
+
+      # --------------------------------------------
+      # 4. LINT ALL BICEP MODULES
       # --------------------------------------------
 
       - name: Lint Bicep modules
@@ -325,7 +342,7 @@ jobs:
           Write-Host 'All Bicep modules passed build validation.'
 
       # --------------------------------------------
-      # 4. VALIDATE JSON AND YAML
+      # 5. VALIDATE JSON AND YAML
       # --------------------------------------------
 
       - name: Validate JSON
@@ -372,7 +389,7 @@ jobs:
           }
 
       # --------------------------------------------
-      # 5. GENERATE PARAMETERS FROM input.json
+      # 6. GENERATE PARAMETERS FROM input.json
       # --------------------------------------------
 
       - name: Generate module parameters
@@ -687,7 +704,7 @@ jobs:
           }
 
       # --------------------------------------------
-      # 6. AZURE LOGIN (OIDC)
+      # 7. AZURE LOGIN (OIDC)
       # --------------------------------------------
 
       - name: Azure Login
@@ -698,7 +715,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       # --------------------------------------------
-      # 7. VERIFY AZURE SUBSCRIPTION
+      # 8. VERIFY AZURE SUBSCRIPTION
       # --------------------------------------------
 
       - name: Verify Azure subscription
@@ -718,7 +735,7 @@ jobs:
           }
 
       # --------------------------------------------
-      # 8. PRE-DEPLOYMENT RESOURCE CHECKS
+      # 9. PRE-DEPLOYMENT RESOURCE CHECKS
       # --------------------------------------------
 
       - name: Pre-deployment resource checks
@@ -932,7 +949,7 @@ jobs:
           Write-Host 'All selected pre-deployment checks passed.'
 
       # --------------------------------------------
-      # 9. DEPLOY RESOURCE GROUP
+      # 10. DEPLOY RESOURCE GROUP
       # --------------------------------------------
 
       - name: Deploy Resource Group
@@ -952,7 +969,7 @@ jobs:
           }
 
       # --------------------------------------------
-      # 10. DEPLOY INDIVIDUAL MODULES
+      # 11. DEPLOY INDIVIDUAL MODULES
       # --------------------------------------------
 
       - name: Deploy individual modules
@@ -1041,7 +1058,7 @@ jobs:
           Deploy-Module $env:PLAN_VM 'VM' 'modules/compute/vm.bicep' '.generated-parameters/vm.json'
 
       # --------------------------------------------
-      # 11. VERIFY DEPLOYED RESOURCES
+      # 12. VERIFY DEPLOYED RESOURCES
       # --------------------------------------------
 
       - name: Verify deployed resources
@@ -1059,7 +1076,7 @@ jobs:
           }
 
       # --------------------------------------------
-      # 12. CLEANUP
+      # 13. CLEANUP
       # --------------------------------------------
 
       - name: Cleanup generated parameters
