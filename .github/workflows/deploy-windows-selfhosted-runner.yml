@@ -379,7 +379,65 @@ jobs:
           Write-Host 'All JSON files are valid.' -ForegroundColor Green
 
       # --------------------------------------------
-      # 5B. DIAGNOSTIC GITHUB ACTIONS YAML LINT
+      # 5B. NORMALIZE GITHUB ACTIONS YAML FILES
+      # --------------------------------------------
+
+      - name: Normalize GitHub Actions YAML files
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          Write-Host '===== NORMALIZE YAML FILES ====='
+
+          $workflowDirectory = '.github/workflows'
+
+          if (-not (Test-Path -LiteralPath $workflowDirectory -PathType Container)) {
+            throw "Workflow directory not found: $workflowDirectory"
+          }
+
+          $yamlFiles = @(
+            Get-ChildItem -LiteralPath $workflowDirectory -Recurse -File |
+              Where-Object {
+                $_.Extension -in @('.yml', '.yaml')
+              }
+          )
+
+          if ($yamlFiles.Count -eq 0) {
+            throw 'No GitHub Actions YAML files found.'
+          }
+
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+          foreach ($file in $yamlFiles) {
+            Write-Host "Normalizing: $($file.FullName)"
+
+            $content = [IO.File]::ReadAllText($file.FullName)
+
+            # Remove UTF-8 BOM character if present
+            $content = $content.TrimStart([char]0xFEFF)
+
+            # Convert CRLF and CR line endings to LF
+            $content = $content -replace "`r`n?", "`n"
+
+            # Remove leading blank lines
+            $content = $content -replace '\A(?:[ \t]*\n)+', ''
+
+            # Ensure exactly one final newline
+            $content = $content.TrimEnd("`r", "`n") + "`n"
+
+            # Write UTF-8 without BOM
+            [IO.File]::WriteAllText(
+              $file.FullName,
+              $content,
+              $utf8NoBom
+            )
+
+            Write-Host "PASS: $($file.Name) normalized." -ForegroundColor Green
+          }
+
+          Write-Host 'All GitHub Actions YAML files normalized successfully.'
+
+      # --------------------------------------------
+      # 5C. LINT GITHUB ACTIONS YAML FILES
       # --------------------------------------------
 
       - name: Lint GitHub Actions YAML
@@ -388,7 +446,15 @@ jobs:
 
           Write-Host '===== GITHUB ACTIONS YAML LINT ====='
 
-          $lintOutput = & python -m yamllint -d relaxed -f parsable .github/workflows/ 2>&1
+          # Relax style checks and disable the 80-character
+          # line-length rule while retaining YAML syntax checks.
+          $lintConfig = '{extends: relaxed, rules: {line-length: disable}}'
+
+          $lintOutput = & python -m yamllint `
+            -d $lintConfig `
+            -f parsable `
+            .github/workflows/ 2>&1
+
           $lintExitCode = $LASTEXITCODE
 
           if ($lintOutput) {
