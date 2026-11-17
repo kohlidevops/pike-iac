@@ -31,6 +31,7 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       VM_ADMIN_PASSWORD: ${{ secrets.VM_ADMIN_PASSWORD }}
       SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+      POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
 
     steps:
       # --------------------------------------------
@@ -521,7 +522,8 @@ jobs:
           keys = [
               "resourceGroups", "nsgs", "routeTables", "vnets", "subnets",
               "loadBalancers", "applicationGatewaySubnets", "applicationGateways",
-              "keyVaults", "storageAccounts", "sqlDatabases", "openAiServices", "vms"
+              "keyVaults", "storageAccounts", "sqlDatabases", "postgresqlServers",
+              "openAiServices", "vms"
           ]
 
           for key in keys:
@@ -555,8 +557,10 @@ jobs:
                   )
 
           check(
-              len(zones["vms"]) <= 1 and len(zones["sqlDatabases"]) <= 1,
-              "Only one VM and one SQL configuration are supported."
+              len(zones["vms"]) <= 1
+              and len(zones["sqlDatabases"]) <= 1
+              and len(zones["postgresqlServers"]) <= 1,
+              "Only one VM, SQL, and PostgreSQL server configuration is supported."
           )
 
           if plan.get("vms") == "create" and zones["vms"]:
@@ -564,6 +568,12 @@ jobs:
 
           if plan.get("sqlDatabases") == "create" and zones["sqlDatabases"]:
               check(bool(os.environ.get("SQL_ADMIN_PASSWORD")), "SQL_ADMIN_PASSWORD secret is required for SQL deployment.")
+
+          if plan.get("postgresqlServers") == "create" and zones["postgresqlServers"]:
+              check(
+                  bool(os.environ.get("POSTGRES_ADMIN_PASSWORD")),
+                  "POSTGRES_ADMIN_PASSWORD secret is required for PostgreSQL deployment."
+              )
 
           def write(name, params):
               data = {
@@ -720,6 +730,27 @@ jobs:
                   "databaseMaxSizeBytes": x["databaseMaxSizeBytes"],
                   "publicNetworkAccess": x["publicNetworkAccess"],
                   "minimumTlsVersion": x["minimumTlsVersion"],
+                  "tags": x["tags"]
+              })
+
+          # POSTGRESQL FLEXIBLE SERVER
+          for x in zones["postgresqlServers"]:
+              write("postgresql", {
+                  "location": x["location"],
+                  "serverName": x["serverName"],
+                  "administratorLogin": x["administratorLogin"],
+                  "administratorLoginPassword": os.environ["POSTGRES_ADMIN_PASSWORD"],
+                  "version": x["version"],
+                  "skuName": x["skuName"],
+                  "skuTier": x["skuTier"],
+                  "storageSizeGB": x["storageSizeGB"],
+                  "storageAutoGrow": x["storageAutoGrow"],
+                  "backupRetentionDays": x["backupRetentionDays"],
+                  "geoRedundantBackup": x["geoRedundantBackup"],
+                  "highAvailabilityMode": x["highAvailabilityMode"],
+                  "publicNetworkAccess": x["publicNetworkAccess"],
+                  "databases": x["databases"],
+                  "firewallRules": x.get("firewallRules", []),
                   "tags": x["tags"]
               })
 
@@ -1066,6 +1097,7 @@ jobs:
           PLAN_KV: ${{ steps.config.outputs.keyVaults }}
           PLAN_STORAGE: ${{ steps.config.outputs.storageAccounts }}
           PLAN_SQL: ${{ steps.config.outputs.sqlDatabases }}
+          PLAN_POSTGRESQL: ${{ steps.config.outputs.postgresqlServers }}
           PLAN_OPENAI: ${{ steps.config.outputs.openAiServices }}
           PLAN_VM: ${{ steps.config.outputs.vms }}
         run: |
@@ -1131,6 +1163,7 @@ jobs:
 
           # DATABASE
           Deploy-Module $env:PLAN_SQL 'SQL' 'modules/database/sql.bicep' '.generated-parameters/sql.json'
+          Deploy-Module $env:PLAN_POSTGRESQL 'POSTGRESQL' 'modules/database/postgresql.bicep' '.generated-parameters/postgresql.json'
 
           # AI
           Deploy-Module $env:PLAN_OPENAI 'OPENAI' 'modules/ai/openai.bicep' '.generated-parameters/openai.json'
