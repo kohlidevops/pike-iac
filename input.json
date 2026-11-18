@@ -15,7 +15,7 @@
     "location": "centralus"
   },
   "deploymentPlan": {
-    "resourceGroups": "skip",
+    "resourceGroups": "create",
     "nsgs": "create",
     "routeTables": "create",
     "vnets": "create",
