@@ -350,7 +350,7 @@
     ],
     "postgresqlServers": [
       {
-        "serverName": "psql-pikehex-dev-cus-001",
+        "serverName": "psql-pikehex-dev-cus-002",
         "resourceGroupName": "rg-pikehex-dev-centralus-001",
         "location": "centralus",
         "administratorLogin": "pikehexpgadmin",
